@@ -9,10 +9,12 @@ public sealed class FileLogger : ILogger
     private readonly string _logFilePath;
     private readonly object _sync = new();
 
-    public FileLogger()
+    public FileLogger(IAppStorageLocation storageLocation)
     {
         var fileName = $"log-{DateTime.UtcNow:yyyyMMdd}.txt";
-        _logFilePath = Path.Combine(AppPaths.LogsFolder, fileName);
+        var folder = storageLocation.LogsFolder;
+        Directory.CreateDirectory(folder);
+        _logFilePath = Path.Combine(folder, fileName);
     }
 
     public void LogError(string message, Exception? exception = null)

@@ -10,24 +10,42 @@ namespace VocalJoystick.Infrastructure.Persistence;
 public sealed class JsonSettingsRepository : ISettingsRepository
 {
     private readonly JsonSerializerOptions _options = new() { WriteIndented = true };
-    private readonly string _settingsPath = AppPaths.SettingsFile;
+    private readonly IAppStorageLocation _storageLocation;
 
-    public async Task<SettingsSnapshot?> LoadSettingsAsync(CancellationToken cancellationToken)
+    public JsonSettingsRepository(IAppStorageLocation storageLocation)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        if (!File.Exists(_settingsPath))
+        _storageLocation = storageLocation;
+        var directory = Path.GetDirectoryName(storageLocation.SettingsFile);
+        if (!string.IsNullOrWhiteSpace(directory))
         {
-            return null;
+            Directory.CreateDirectory(directory);
         }
-
-        var content = await File.ReadAllTextAsync(_settingsPath, cancellationToken).ConfigureAwait(false);
-        return JsonSerializer.Deserialize<SettingsSnapshot>(content, _options);
     }
 
-    public async Task SaveSettingsAsync(SettingsSnapshot snapshot, CancellationToken cancellationToken)
+    public async Task<AppSettings> LoadSettingsAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var content = JsonSerializer.Serialize(snapshot, _options);
-        await File.WriteAllTextAsync(_settingsPath, content, cancellationToken).ConfigureAwait(false);
+        if (!File.Exists(_storageLocation.SettingsFile))
+        {
+            return AppSettings.CreateDefault();
+        }
+
+        try
+        {
+            var content = await File.ReadAllTextAsync(_storageLocation.SettingsFile, cancellationToken).ConfigureAwait(false);
+            var settings = JsonSerializer.Deserialize<AppSettings>(content, _options);
+            return settings ?? AppSettings.CreateDefault();
+        }
+        catch (JsonException)
+        {
+            return AppSettings.CreateDefault();
+        }
+    }
+
+    public async Task SaveSettingsAsync(AppSettings settings, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var content = JsonSerializer.Serialize(settings, _options);
+        await File.WriteAllTextAsync(_storageLocation.SettingsFile, content, cancellationToken).ConfigureAwait(false);
     }
 }

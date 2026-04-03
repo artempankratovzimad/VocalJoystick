@@ -13,3 +13,4 @@ C:\work\trash\VocalJoystick\VocalJoystick.Audio\obj\Debug\net8.0\VocalJoystick.A
 C:\work\trash\VocalJoystick\VocalJoystick.Audio\obj\Debug\net8.0\refint\VocalJoystick.Audio.dll
 C:\work\trash\VocalJoystick\VocalJoystick.Audio\obj\Debug\net8.0\VocalJoystick.Audio.pdb
 C:\work\trash\VocalJoystick\VocalJoystick.Audio\obj\Debug\net8.0\ref\VocalJoystick.Audio.dll
+C:\work\trash\VocalJoystick\VocalJoystick.Audio\obj\Debug\net8.0\VocalJoystick.Audio.sourcelink.json

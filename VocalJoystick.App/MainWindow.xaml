@@ -5,8 +5,8 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
         Title="Vocal Joystick"
-        Width="900"
-        Height="520"
+        Width="940"
+        Height="620"
         WindowStartupLocation="CenterScreen">
     <Window.Background>
         <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
@@ -14,8 +14,11 @@
             <GradientStop Color="#FF171A2B" Offset="1" />
         </LinearGradientBrush>
     </Window.Background>
+
     <Grid Margin="24">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -37,15 +40,23 @@
         </Border>
 
         <Border Grid.Row="1" Background="#FF1F2A43" CornerRadius="12" Padding="16" Margin="0 0 0 16">
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <WrapPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                 <Button Content="Configuration Mode" Command="{Binding ConfigurationModeCommand}" Width="160" Height="40" Margin="0 0 12 0" />
                 <Button Content="Working Mode" Command="{Binding WorkingModeCommand}" Width="140" Height="40" Margin="0 0 12 0" />
                 <Button Content="Stop" Command="{Binding StopCommand}" Width="100" Height="40" Margin="0 0 12 0" />
                 <Button Content="Settings" Command="{Binding SettingsCommand}" Width="120" Height="40" />
-            </StackPanel>
+            </WrapPanel>
         </Border>
 
         <Border Grid.Row="2" Background="#FF1F2A43" CornerRadius="12" Padding="16" Margin="0 0 0 16">
+            <StackPanel>
+                <TextBlock FontSize="18" FontWeight="Bold" Foreground="White" Text="Settings" />
+                <TextBlock FontSize="16" Foreground="#FFCFE2FF" Text="{Binding SettingsSummary}" />
+                <TextBlock FontSize="12" Foreground="#FF7C8CA9" Text="Persistence stored under %AppData%/VocalJoystick" />
+            </StackPanel>
+        </Border>
+
+        <Border Grid.Row="3" Background="#FF1F2A43" CornerRadius="12" Padding="16" Margin="0 0 0 16">
             <StackPanel>
                 <TextBlock FontSize="18" FontWeight="Bold" Foreground="White" Text="Signal Level" />
                 <ProgressBar Minimum="0" Maximum="100" Value="42" Height="18" Margin="0 8 0 4" />
@@ -53,7 +64,25 @@
             </StackPanel>
         </Border>
 
-        <Border Grid.Row="3" Background="#FF1F2A43" CornerRadius="12" Padding="16">
+        <Border Grid.Row="4" Background="#FF1F2A43" CornerRadius="12" Padding="16" Margin="0 0 0 16">
+            <StackPanel>
+                <TextBlock FontSize="18" FontWeight="Bold" Foreground="White" Text="Configuration Status" />
+                <ItemsControl ItemsSource="{Binding ActionStatuses}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Background="#FF0F1528" CornerRadius="6" Padding="8" Margin="0 6 0 0">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock FontSize="14" Foreground="#FFD6E6FF" Width="160" Text="{Binding DisplayName}" />
+                                    <TextBlock FontSize="14" Foreground="#FF8EF0AA" Text="{Binding FriendlyStatus}" />
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </Border>
+
+        <Border Grid.Row="5" Background="#FF1F2A43" CornerRadius="12" Padding="16">
             <StackPanel>
                 <TextBlock FontSize="18" FontWeight="Bold" Foreground="White" Text="Current Command" />
                 <TextBlock FontSize="16" Foreground="#FF8AB4F8" Text="{Binding CurrentCommand}" />

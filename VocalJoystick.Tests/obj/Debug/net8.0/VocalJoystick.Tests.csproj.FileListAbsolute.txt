@@ -111,3 +111,8 @@ C:\work\trash\VocalJoystick\VocalJoystick.Tests\obj\Debug\net8.0\refint\VocalJoy
 C:\work\trash\VocalJoystick\VocalJoystick.Tests\obj\Debug\net8.0\VocalJoystick.Tests.pdb
 C:\work\trash\VocalJoystick\VocalJoystick.Tests\obj\Debug\net8.0\VocalJoystick.Tests.genruntimeconfig.cache
 C:\work\trash\VocalJoystick\VocalJoystick.Tests\obj\Debug\net8.0\ref\VocalJoystick.Tests.dll
+C:\work\trash\VocalJoystick\VocalJoystick.Tests\bin\Debug\net8.0\VocalJoystick.Infrastructure.dll
+C:\work\trash\VocalJoystick\VocalJoystick.Tests\bin\Debug\net8.0\VocalJoystick.Input.dll
+C:\work\trash\VocalJoystick\VocalJoystick.Tests\bin\Debug\net8.0\VocalJoystick.Infrastructure.pdb
+C:\work\trash\VocalJoystick\VocalJoystick.Tests\bin\Debug\net8.0\VocalJoystick.Input.pdb
+C:\work\trash\VocalJoystick\VocalJoystick.Tests\obj\Debug\net8.0\VocalJoystick.Tests.sourcelink.json

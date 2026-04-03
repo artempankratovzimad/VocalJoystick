@@ -25,3 +25,4 @@ C:\work\trash\VocalJoystick\VocalJoystick.App\obj\Debug\net8.0-windows\refint\Vo
 C:\work\trash\VocalJoystick\VocalJoystick.App\obj\Debug\net8.0-windows\VocalJoystick.App.pdb
 C:\work\trash\VocalJoystick\VocalJoystick.App\obj\Debug\net8.0-windows\VocalJoystick.App.genruntimeconfig.cache
 C:\work\trash\VocalJoystick\VocalJoystick.App\obj\Debug\net8.0-windows\ref\VocalJoystick.App.dll
+C:\work\trash\VocalJoystick\VocalJoystick.App\obj\Debug\net8.0-windows\VocalJoystick.App.sourcelink.json

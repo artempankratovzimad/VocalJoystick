@@ -15,6 +15,7 @@ public sealed class StubAudioCaptureService : IAudioCaptureService
     public Task StartAsync(CancellationToken cancellationToken)
     {
         IsCapturing = true;
+        BufferCaptured?.Invoke(this, new AudioBufferEventArgs(new AudioBuffer(Array.Empty<float>(), 0)));
         return Task.CompletedTask;
     }
 

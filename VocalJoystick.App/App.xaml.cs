@@ -2,6 +2,7 @@ using System.Windows;
 using VocalJoystick.App.DependencyInjection;
 using VocalJoystick.App.ViewModels;
 using VocalJoystick.Core.Interfaces;
+using VocalJoystick.Infrastructure;
 using VocalJoystick.Infrastructure.Logging;
 using VocalJoystick.Infrastructure.Persistence;
 using VocalJoystick.Infrastructure.Stubs;
@@ -30,9 +31,10 @@ public partial class App : Application
 
     private static void RegisterServices(SimpleServiceProvider services)
     {
-        services.RegisterSingleton<ILogger>(_ => new FileLogger());
-        services.RegisterSingleton<IProfileRepository>(_ => new JsonProfileRepository());
-        services.RegisterSingleton<ISettingsRepository>(_ => new JsonSettingsRepository());
+        services.RegisterSingleton<IAppStorageLocation>(_ => new AppStorageLocation());
+        services.RegisterSingleton<ILogger>(sp => new FileLogger(sp.GetRequiredService<IAppStorageLocation>()));
+        services.RegisterSingleton<IProfileRepository>(sp => new JsonProfileRepository(sp.GetRequiredService<IAppStorageLocation>()));
+        services.RegisterSingleton<ISettingsRepository>(sp => new JsonSettingsRepository(sp.GetRequiredService<IAppStorageLocation>()));
         services.RegisterSingleton<IAudioCaptureService>(_ => new StubAudioCaptureService());
         services.RegisterSingleton<IVoiceActivityDetector>(_ => new StubVoiceActivityDetector());
         services.RegisterSingleton<IPitchDetector>(_ => new StubPitchDetector());

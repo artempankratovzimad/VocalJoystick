@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
@@ -17,6 +20,8 @@ public sealed class MainWindowViewModel : ViewModelBase
     private string _currentCommand = "Awaiting activation";
     private AppMode _currentMode = AppMode.Stopped;
     private UserProfileMetadata? _activeProfile;
+    private AppSettings _currentSettings = AppSettings.CreateDefault();
+    private IReadOnlyList<ActionConfigurationStatus> _actionStatuses = Array.Empty<ActionConfigurationStatus>();
 
     public MainWindowViewModel(
         IProfileRepository profileRepository,
@@ -58,6 +63,22 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public string CurrentProfileDisplay => _activeProfile?.DisplayName ?? "(no profile)";
 
+    public string SettingsSummary => $"Mode: {CurrentSettings.LastMode}; Active profile: {CurrentSettings.ActiveProfileId ?? "(none)"}";
+
+    public AppSettings CurrentSettings
+    {
+        get => _currentSettings;
+        private set
+        {
+            if (SetProperty(ref _currentSettings, value))
+            {
+                OnPropertyChanged(nameof(SettingsSummary));
+            }
+        }
+    }
+
+    public IReadOnlyList<ActionConfigurationStatus> ActionStatuses => _actionStatuses;
+
     public string ModeDisplay => CurrentMode.ToString();
 
     public AppMode CurrentMode
@@ -74,6 +95,10 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
+        var settings = await _settingsRepository.LoadSettingsAsync(cancellationToken).ConfigureAwait(true);
+        CurrentSettings = settings;
+        CurrentMode = settings.LastMode;
+
         _activeProfile = await _profileRepository.GetActiveProfileAsync(cancellationToken).ConfigureAwait(true);
         if (_activeProfile is null)
         {
@@ -84,8 +109,12 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         OnPropertyChanged(nameof(CurrentProfileDisplay));
 
-        var settings = await _settingsRepository.LoadSettingsAsync(cancellationToken).ConfigureAwait(true);
-        CurrentMode = settings?.LastMode ?? AppMode.Stopped;
+        CurrentSettings = CurrentSettings.WithMode(CurrentMode, _activeProfile?.Id);
+
+        var profile = _activeProfile ?? throw new InvalidOperationException("Active profile must exist");
+        var configuration = await _profileRepository.LoadOrCreateProfileConfigurationAsync(profile, cancellationToken).ConfigureAwait(true);
+        UpdateActionStatuses(configuration);
+
         UpdateSignalLevel(0);
         _logger.LogInfo("Main view model initialized");
     }
@@ -101,7 +130,21 @@ public sealed class MainWindowViewModel : ViewModelBase
         MicrophoneStatus = micState;
         CurrentCommand = commandState;
         _logger.LogInfo($"Mode switched to {mode}");
-        var snapshot = new SettingsSnapshot(mode, _activeProfile?.Id);
-        _ = _settingsRepository.SaveSettingsAsync(snapshot, CancellationToken.None);
+        CurrentSettings = CurrentSettings.WithMode(mode, _activeProfile?.Id);
+        OnPropertyChanged(nameof(SettingsSummary));
+        _ = _settingsRepository.SaveSettingsAsync(CurrentSettings, CancellationToken.None);
+    }
+
+    private void UpdateActionStatuses(ProfileConfiguration configuration)
+    {
+        var statuses = configuration.ActionConfigurations.Values
+            .Select(config => new ActionConfigurationStatus(
+                config.Action,
+                config.IsConfigured,
+                config.IsConfigured ? "Configured" : "Not configured"))
+            .ToList();
+
+        _actionStatuses = statuses;
+        OnPropertyChanged(nameof(ActionStatuses));
     }
 }

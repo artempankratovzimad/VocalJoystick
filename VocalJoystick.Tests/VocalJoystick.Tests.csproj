@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\VocalJoystick.Core\VocalJoystick.Core.csproj" />
+    <ProjectReference Include="..\VocalJoystick.Infrastructure\VocalJoystick.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

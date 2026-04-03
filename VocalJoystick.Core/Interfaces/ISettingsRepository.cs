@@ -6,6 +6,6 @@ namespace VocalJoystick.Core.Interfaces;
 
 public interface ISettingsRepository
 {
-    Task<SettingsSnapshot?> LoadSettingsAsync(CancellationToken cancellationToken);
-    Task SaveSettingsAsync(SettingsSnapshot snapshot, CancellationToken cancellationToken);
+    Task<AppSettings> LoadSettingsAsync(CancellationToken cancellationToken);
+    Task SaveSettingsAsync(AppSettings settings, CancellationToken cancellationToken);
 }

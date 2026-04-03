@@ -13,3 +13,4 @@ C:\work\trash\VocalJoystick\VocalJoystick.Input\obj\Debug\net8.0\VocalJoystick.I
 C:\work\trash\VocalJoystick\VocalJoystick.Input\obj\Debug\net8.0\refint\VocalJoystick.Input.dll
 C:\work\trash\VocalJoystick\VocalJoystick.Input\obj\Debug\net8.0\VocalJoystick.Input.pdb
 C:\work\trash\VocalJoystick\VocalJoystick.Input\obj\Debug\net8.0\ref\VocalJoystick.Input.dll
+C:\work\trash\VocalJoystick\VocalJoystick.Input\obj\Debug\net8.0\VocalJoystick.Input.sourcelink.json
