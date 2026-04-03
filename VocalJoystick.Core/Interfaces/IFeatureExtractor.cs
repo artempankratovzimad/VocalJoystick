@@ -6,5 +6,5 @@ namespace VocalJoystick.Core.Interfaces;
 
 public interface IFeatureExtractor
 {
-    Task<float[]> ExtractFeaturesAsync(AudioBuffer buffer, CancellationToken cancellationToken);
+    Task<FeatureExtractionResult> ExtractFeaturesAsync(AudioBuffer buffer, CancellationToken cancellationToken);
 }

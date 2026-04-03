@@ -82,10 +82,14 @@ public sealed class StubPitchDetector : IPitchDetector
 
 public sealed class StubFeatureExtractor : IFeatureExtractor
 {
-    public Task<float[]> ExtractFeaturesAsync(AudioBuffer buffer, CancellationToken cancellationToken)
+    public Task<FeatureExtractionResult> ExtractFeaturesAsync(AudioBuffer buffer, CancellationToken cancellationToken)
     {
-        var feature = buffer.Samples.Take(8).Select(s => Math.Abs(s)).Select(Convert.ToSingle).ToArray();
-        return Task.FromResult(feature.Length == 0 ? new float[0] : feature);
+        var magnitude = buffer.Samples.Take(8).Select(s => Math.Abs(s)).Select(Convert.ToSingle).ToArray();
+        var rms = buffer.Samples.Length == 0 ? 0d : Math.Sqrt(buffer.Samples.Sum(sample => sample * sample) / buffer.Samples.Length);
+        var summary = new SampleFeatureSummary(rms, 0, 0, 0, 0, 0, 0);
+        var featureVector = magnitude.Length == 0 ? Array.Empty<float>() : magnitude;
+        var result = new FeatureExtractionResult(featureVector, summary);
+        return Task.FromResult(result);
     }
 }
 

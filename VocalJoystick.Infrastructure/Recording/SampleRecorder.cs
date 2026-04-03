@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,13 +14,19 @@ public sealed class SampleRecorder : ISampleRecorder, IDisposable
     private readonly IAudioCaptureService _audioCaptureService;
     private readonly IAppStorageLocation _storageLocation;
     private readonly ILogger _logger;
+    private readonly IFeatureExtractor _featureExtractor;
     private RecordingSession? _activeSession;
 
-    public SampleRecorder(IAudioCaptureService audioCaptureService, IAppStorageLocation storageLocation, ILogger logger)
+    public SampleRecorder(
+        IAudioCaptureService audioCaptureService,
+        IAppStorageLocation storageLocation,
+        ILogger logger,
+        IFeatureExtractor featureExtractor)
     {
         _audioCaptureService = audioCaptureService;
         _storageLocation = storageLocation;
         _logger = logger;
+        _featureExtractor = featureExtractor;
         _audioCaptureService.BufferCaptured += OnBufferCaptured;
     }
 
@@ -44,21 +51,20 @@ public sealed class SampleRecorder : ISampleRecorder, IDisposable
         return Task.CompletedTask;
     }
 
-    public Task<SampleMetadata?> StopRecordingAsync(string profileId, VocalAction action, CancellationToken cancellationToken)
+    public async Task<SampleMetadata?> StopRecordingAsync(string profileId, VocalAction action, CancellationToken cancellationToken)
     {
         if (_activeSession is null || _activeSession.Action != action)
         {
-            return Task.FromResult<SampleMetadata?>(null);
+            return null;
         }
 
-        _activeSession.Dispose();
         var session = _activeSession;
         _activeSession = null;
-        var duration = session.SamplesWritten / (double)session.SampleRate;
-        var relativePath = Path.GetRelativePath(_storageLocation.BaseFolder, session.FilePath);
-        var metadata = new SampleMetadata(session.FileName, relativePath, DateTimeOffset.UtcNow, duration);
-        _logger.LogInfo($"Recording stopped for {action}, duration {duration:F2}s");
-        return Task.FromResult<SampleMetadata?>(metadata);
+        session.Dispose();
+
+        var metadata = await BuildMetadataAsync(session, cancellationToken).ConfigureAwait(false);
+        _logger.LogInfo($"Recording stopped for {action}, duration {metadata.DurationSeconds:F2}s");
+        return metadata;
     }
 
     public Task DeleteSamplesAsync(string profileId, VocalAction action, CancellationToken cancellationToken)
@@ -71,6 +77,39 @@ public sealed class SampleRecorder : ISampleRecorder, IDisposable
         }
 
         return Task.CompletedTask;
+    }
+
+    private async Task<SampleMetadata> BuildMetadataAsync(RecordingSession session, CancellationToken cancellationToken)
+    {
+        var samples = LoadSamples(session.FilePath);
+        var buffer = new AudioBuffer(samples, session.SampleRate);
+        var extraction = await _featureExtractor.ExtractFeaturesAsync(buffer, cancellationToken).ConfigureAwait(false);
+        var duration = samples.Length / (double)Math.Max(1, session.SampleRate);
+        var relativePath = Path.GetRelativePath(_storageLocation.BaseFolder, session.FilePath);
+        return new SampleMetadata(session.FileName, relativePath, DateTimeOffset.UtcNow, duration, extraction.Summary);
+    }
+
+    private static float[] LoadSamples(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return Array.Empty<float>();
+        }
+
+        using var reader = new WaveFileReader(path);
+        var samples = new List<float>();
+        while (reader.Position < reader.Length)
+        {
+            var frame = reader.ReadNextSampleFrame();
+            if (frame is null || frame.Length == 0)
+            {
+                break;
+            }
+
+            samples.Add(frame[0]);
+        }
+
+        return samples.ToArray();
     }
 
     private void OnBufferCaptured(object? sender, AudioBufferEventArgs args)

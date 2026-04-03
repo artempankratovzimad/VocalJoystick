@@ -318,17 +318,18 @@ public sealed class MainWindowViewModel : ViewModelBase
         var metadata = await _sampleRecorder.StopRecordingAsync(_activeProfile.Id, action.Value, CancellationToken.None);
         state.IsRecording = false;
         RefreshRecordingCommandStates();
-        if (metadata is not null)
-        {
-            var config = GetActionConfiguration(action.Value);
-            config.Samples.Add(metadata);
-            if (_profileConfiguration is not null)
+            if (metadata is not null)
             {
-                await _profileRepository.SaveProfileConfigurationAsync(_profileConfiguration, CancellationToken.None).ConfigureAwait(true);
+                var config = GetActionConfiguration(action.Value);
+                config.Samples.Add(metadata);
+                config.RefreshTemplate();
+                if (_profileConfiguration is not null)
+                {
+                    await _profileRepository.SaveProfileConfigurationAsync(_profileConfiguration, CancellationToken.None).ConfigureAwait(true);
+                }
+                state.UpdateMetadata(config.Samples, config.Template);
+                RefreshActionStatuses();
             }
-            state.UpdateMetadata(config.Samples);
-            RefreshActionStatuses();
-        }
         _logger.LogInfo($"Stopped recording for {action.Value}");
     }
 
@@ -343,11 +344,12 @@ public sealed class MainWindowViewModel : ViewModelBase
         await _sampleRecorder.DeleteSamplesAsync(_activeProfile.Id, action.Value, CancellationToken.None);
         var config = GetActionConfiguration(action.Value);
         config.Samples.Clear();
+        config.RefreshTemplate();
         if (_profileConfiguration is not null)
         {
             await _profileRepository.SaveProfileConfigurationAsync(_profileConfiguration, CancellationToken.None).ConfigureAwait(true);
         }
-        state.UpdateMetadata(config.Samples);
+        state.UpdateMetadata(config.Samples, config.Template);
         RefreshActionStatuses();
         _logger.LogInfo($"Deleted recordings for {action.Value}");
         RefreshRecordingCommandStates();
@@ -532,6 +534,11 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     private void RefreshActionStatuses(ProfileConfiguration configuration)
     {
+        foreach (var actionConfig in configuration.ActionConfigurations.Values)
+        {
+            actionConfig.RefreshTemplate();
+        }
+
         var statuses = configuration.ActionConfigurations.Values
             .Select(config => new ActionConfigurationStatus(
                 config.Action,
@@ -552,8 +559,8 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         foreach (var kvp in _actionStateMap)
         {
-            var samples = _profileConfiguration.ActionConfigurations[kvp.Key].Samples;
-            kvp.Value.UpdateMetadata(samples);
+            var configuration = _profileConfiguration.ActionConfigurations[kvp.Key];
+            kvp.Value.UpdateMetadata(configuration.Samples, configuration.Template);
         }
     }
 }

@@ -9,6 +9,7 @@ public sealed class ActionSampleState : ViewModelBase
     private string _durationText = "Duration: 0s";
     private bool _isRecording;
     private int _sampleCount;
+    private string _featureSummary = "Template pending";
 
     public ActionSampleState(VocalAction action)
     {
@@ -43,18 +44,28 @@ public sealed class ActionSampleState : ViewModelBase
         private set => SetProperty(ref _sampleCount, value);
     }
 
-    public void UpdateMetadata(IReadOnlyList<SampleMetadata> samples)
+    public string FeatureSummary
+    {
+        get => _featureSummary;
+        private set => SetProperty(ref _featureSummary, value);
+    }
+
+    public void UpdateMetadata(IReadOnlyList<SampleMetadata> samples, ActionTemplate template)
     {
         SampleCount = samples.Count;
         if (samples.Count == 0)
         {
             StatusText = "No sample";
             DurationText = "Duration: 0s";
+            FeatureSummary = "Template pending";
             return;
         }
 
         var last = samples[^1];
         StatusText = $"Last: {last.RecordedAt:HH:mm:ss}";
         DurationText = $"Duration: {last.DurationSeconds:F2}s";
+        FeatureSummary = template.SampleCount == 0
+            ? "Awaiting feature summary"
+            : $"Avg RMS {template.AverageRms:F2}, Pitch {template.AveragePitchHz:F0}Hz, Voiced {template.VoicedRatio:P0}";
     }
 }
