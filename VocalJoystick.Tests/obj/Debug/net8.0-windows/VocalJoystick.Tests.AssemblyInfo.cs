@@ -10,12 +10,12 @@
 using System;
 using System.Reflection;
 
-[assembly: System.Reflection.AssemblyCompanyAttribute("VocalJoystick.App")]
+[assembly: System.Reflection.AssemblyCompanyAttribute("VocalJoystick.Tests")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
 [assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+87e12a41604f9fe342e3490aec064438bd347d02")]
-[assembly: System.Reflection.AssemblyProductAttribute("VocalJoystick.App")]
-[assembly: System.Reflection.AssemblyTitleAttribute("VocalJoystick.App")]
+[assembly: System.Reflection.AssemblyProductAttribute("VocalJoystick.Tests")]
+[assembly: System.Reflection.AssemblyTitleAttribute("VocalJoystick.Tests")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
 [assembly: System.Runtime.Versioning.TargetPlatformAttribute("Windows7.0")]
 [assembly: System.Runtime.Versioning.SupportedOSPlatformAttribute("Windows7.0")]
