@@ -1,0 +1,11 @@
+C:\work\trash\VocalJoystick\VocalJoystick.Core\bin\Debug\net8.0\VocalJoystick.Core.deps.json
+C:\work\trash\VocalJoystick\VocalJoystick.Core\bin\Debug\net8.0\VocalJoystick.Core.dll
+C:\work\trash\VocalJoystick\VocalJoystick.Core\bin\Debug\net8.0\VocalJoystick.Core.pdb
+C:\work\trash\VocalJoystick\VocalJoystick.Core\obj\Debug\net8.0\VocalJoystick.Core.GeneratedMSBuildEditorConfig.editorconfig
+C:\work\trash\VocalJoystick\VocalJoystick.Core\obj\Debug\net8.0\VocalJoystick.Core.AssemblyInfoInputs.cache
+C:\work\trash\VocalJoystick\VocalJoystick.Core\obj\Debug\net8.0\VocalJoystick.Core.AssemblyInfo.cs
+C:\work\trash\VocalJoystick\VocalJoystick.Core\obj\Debug\net8.0\VocalJoystick.Core.csproj.CoreCompileInputs.cache
+C:\work\trash\VocalJoystick\VocalJoystick.Core\obj\Debug\net8.0\VocalJoystick.Core.dll
+C:\work\trash\VocalJoystick\VocalJoystick.Core\obj\Debug\net8.0\refint\VocalJoystick.Core.dll
+C:\work\trash\VocalJoystick\VocalJoystick.Core\obj\Debug\net8.0\VocalJoystick.Core.pdb
+C:\work\trash\VocalJoystick\VocalJoystick.Core\obj\Debug\net8.0\ref\VocalJoystick.Core.dll

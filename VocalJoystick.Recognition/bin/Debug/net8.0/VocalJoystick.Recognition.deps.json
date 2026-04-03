@@ -1,0 +1,39 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v8.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v8.0": {
+      "VocalJoystick.Recognition/1.0.0": {
+        "dependencies": {
+          "VocalJoystick.Core": "1.0.0"
+        },
+        "runtime": {
+          "VocalJoystick.Recognition.dll": {}
+        }
+      },
+      "VocalJoystick.Core/1.0.0": {
+        "runtime": {
+          "VocalJoystick.Core.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "VocalJoystick.Recognition/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "VocalJoystick.Core/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

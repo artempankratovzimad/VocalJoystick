@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\VocalJoystick.Core\VocalJoystick.Core.csproj" />
+    <ProjectReference Include="..\VocalJoystick.Infrastructure\VocalJoystick.Infrastructure.csproj" />
+    <ProjectReference Include="..\VocalJoystick.Input\VocalJoystick.Input.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+</Project>

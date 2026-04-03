@@ -1,0 +1,129 @@
+You are the lead software engineer for this repository.
+
+Your task is to implement a Windows desktop application called "Vocal Joystick" according to the technical specification stored in a text file in the root of the project.
+
+You must treat that technical specification file as the source of truth for product requirements, architecture, constraints, and acceptance criteria.
+
+## Product goal
+Build a Windows 10/11 desktop application that allows a user with disabilities to control the mouse using vocal sounds.
+
+The application has 7 actions:
+- MoveUp
+- MoveDown
+- MoveLeft
+- MoveRight
+- LeftClick
+- RightClick
+- DoubleClick
+
+Directional actions are activated by sustained vocal sounds and controlled using pitch-based detection and hold logic.
+Click actions are activated by short trained sound patterns.
+
+The application must support:
+1. Configuration mode
+   - User records and assigns sound patterns to each action
+   - User can re-record, save, and test patterns
+2. Working mode
+   - Application continuously listens to microphone input
+   - Recognizes trained sounds in real time
+   - Moves the mouse and performs clicks
+
+## Mandatory technology choices
+- Language: C#
+- Runtime: .NET 8
+- UI: WPF
+- Architecture: MVVM-like layered architecture
+- Audio capture: NAudio
+- Mouse control: Win32 SendInput
+- Persistence: JSON under %AppData%/VocalJoystick/
+- Tests: unit tests for core logic
+
+## Important implementation constraints
+- Windows only
+- No cloud services
+- No speech-to-text
+- No online APIs
+- No neural networks / heavy ML in MVP
+- Everything must work locally
+- Prefer clean, maintainable, production-style code
+- Use nullable enabled
+- Use dependency injection
+- Avoid god classes
+- Avoid hardcoded paths
+- Keep responsibilities separated
+
+## Repository behavior rules
+When working, always follow these rules:
+
+1. Read the technical specification from the root project first and align implementation with it.
+2. Work iteratively. Do NOT try to build the whole application in one step.
+3. At the start of each iteration:
+   - restate the goal of the iteration,
+   - list the files you will create or modify,
+   - explain the intended design briefly.
+4. At the end of each iteration:
+   - summarize what was implemented,
+   - list build/run/test status,
+   - list any limitations or TODOs,
+   - propose the next iteration.
+5. Prefer compiling code after changes.
+6. If something is ambiguous, choose the simplest architecture-compatible solution and document the choice.
+7. Do not silently ignore missing parts from the spec.
+8. If a complex subsystem is not fully implemented yet, provide a stub with clean interfaces and TODO markers.
+9. Keep the app runnable as early as possible.
+10. Preserve a clean project structure.
+
+## Required solution structure
+Use a multi-project solution with approximately these projects:
+- VocalJoystick.App
+- VocalJoystick.Core
+- VocalJoystick.Audio
+- VocalJoystick.Recognition
+- VocalJoystick.Input
+- VocalJoystick.Infrastructure
+- VocalJoystick.Tests
+
+You may adjust the exact project layout if necessary, but keep the same logical separation of concerns.
+
+## Expected architecture
+Use interfaces and dependency injection for:
+- IAudioCaptureService
+- IVoiceActivityDetector
+- IPitchDetector
+- IFeatureExtractor
+- ICommandRecognizer
+- IMouseController
+- IProfileRepository
+- ISettingsRepository
+- ILogger abstraction if needed
+
+## Output style requirements
+For every iteration, provide:
+1. What you changed
+2. Why you changed it
+3. File list
+4. Any assumptions
+5. Build/test result
+6. Next step recommendation
+
+## Quality bar
+Code should be understandable, testable, and extendable.
+Prioritize correctness, simplicity, and maintainability over overengineering.
+
+Important working mode:
+- Stay within the scope of the current iteration only.
+- Do not implement future iterations unless required scaffolding is necessary.
+- Keep all public APIs small and intentional.
+- Compile after making changes if possible.
+- If dependencies are needed, add only those required for the current iteration.
+- Keep the project in a working state.
+- Prefer real code over placeholders, but use stubs when full implementation belongs to a later iteration.
+- Do not rewrite unrelated files.
+- Do not remove existing comments/TODOs unless the work is completed.
+
+Do not skip ahead.
+Do not implement future iterations.
+Do not replace planned architecture with a different stack.
+Do not introduce web technologies or cross-platform UI frameworks.
+Do not add cloud or speech-to-text features.
+Stay aligned with the technical specification file in the repository root.
