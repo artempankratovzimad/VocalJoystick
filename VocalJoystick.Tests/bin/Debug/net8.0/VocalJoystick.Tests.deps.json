@@ -12,6 +12,7 @@
           "Microsoft.NET.Test.Sdk": "17.10.0-preview-24080-01",
           "VocalJoystick.Core": "1.0.0",
           "VocalJoystick.Infrastructure": "1.0.0",
+          "VocalJoystick.Recognition": "1.0.0",
           "Microsoft.VisualStudio.TestPlatform.TestFramework.Extensions": "14.0.0.0"
         },
         "runtime": {
@@ -363,6 +364,17 @@
           }
         }
       },
+      "VocalJoystick.Recognition/1.0.0": {
+        "dependencies": {
+          "VocalJoystick.Core": "1.0.0"
+        },
+        "runtime": {
+          "VocalJoystick.Recognition.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
       "Microsoft.VisualStudio.TestPlatform.TestFramework.Extensions/14.0.0.0": {
         "runtime": {
           "Microsoft.VisualStudio.TestPlatform.TestFramework.Extensions.dll": {
@@ -432,6 +444,11 @@
       "sha512": ""
     },
     "VocalJoystick.Input/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "VocalJoystick.Recognition/1.0.0": {
       "type": "project",
       "serviceable": false,
       "sha512": ""

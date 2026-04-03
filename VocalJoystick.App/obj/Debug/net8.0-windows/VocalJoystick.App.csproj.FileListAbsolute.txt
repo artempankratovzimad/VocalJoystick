@@ -35,3 +35,5 @@ C:\work\trash\VocalJoystick\VocalJoystick.App\bin\Debug\net8.0-windows\NAudio.Wi
 C:\work\trash\VocalJoystick\VocalJoystick.App\bin\Debug\net8.0-windows\NAudio.WinMM.dll
 C:\work\trash\VocalJoystick\VocalJoystick.App\bin\Debug\net8.0-windows\VocalJoystick.Audio.dll
 C:\work\trash\VocalJoystick\VocalJoystick.App\bin\Debug\net8.0-windows\VocalJoystick.Audio.pdb
+C:\work\trash\VocalJoystick\VocalJoystick.App\bin\Debug\net8.0-windows\VocalJoystick.Recognition.dll
+C:\work\trash\VocalJoystick\VocalJoystick.App\bin\Debug\net8.0-windows\VocalJoystick.Recognition.pdb

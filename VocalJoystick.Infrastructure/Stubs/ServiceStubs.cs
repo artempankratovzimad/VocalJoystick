@@ -58,9 +58,17 @@ public sealed class StubAudioCaptureService : IAudioCaptureService
 
 public sealed class StubVoiceActivityDetector : IVoiceActivityDetector
 {
-    public bool IsVoiceActivity(AudioBuffer buffer)
+    public VoiceActivityResult Analyze(Frame frame, FrameProcessingSettings settings)
     {
-        return buffer.Samples.Any(sample => Math.Abs(sample) > 0.001f);
+        var samples = frame.Samples;
+        double sumSquares = 0;
+        foreach (var sample in samples)
+        {
+            sumSquares += sample * sample;
+        }
+
+        var rms = samples.Length > 0 ? Math.Sqrt(sumSquares / samples.Length) : 0d;
+        return new VoiceActivityResult(rms >= settings.VadThreshold, rms);
     }
 }
 

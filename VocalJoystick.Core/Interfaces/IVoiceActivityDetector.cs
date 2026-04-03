@@ -4,5 +4,5 @@ namespace VocalJoystick.Core.Interfaces;
 
 public interface IVoiceActivityDetector
 {
-    bool IsVoiceActivity(AudioBuffer buffer);
+    VoiceActivityResult Analyze(Frame frame, FrameProcessingSettings settings);
 }

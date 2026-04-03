@@ -169,6 +169,19 @@
         "runtime": {
           "bin/placeholder/VocalJoystick.Input.dll": {}
         }
+      },
+      "VocalJoystick.Recognition/1.0.0": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v8.0",
+        "dependencies": {
+          "VocalJoystick.Core": "1.0.0"
+        },
+        "compile": {
+          "bin/placeholder/VocalJoystick.Recognition.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/VocalJoystick.Recognition.dll": {}
+        }
       }
     }
   },
@@ -304,6 +317,11 @@
       "type": "project",
       "path": "../VocalJoystick.Input/VocalJoystick.Input.csproj",
       "msbuildProject": "../VocalJoystick.Input/VocalJoystick.Input.csproj"
+    },
+    "VocalJoystick.Recognition/1.0.0": {
+      "type": "project",
+      "path": "../VocalJoystick.Recognition/VocalJoystick.Recognition.csproj",
+      "msbuildProject": "../VocalJoystick.Recognition/VocalJoystick.Recognition.csproj"
     }
   },
   "projectFileDependencyGroups": {
@@ -311,7 +329,8 @@
       "VocalJoystick.Audio >= 1.0.0",
       "VocalJoystick.Core >= 1.0.0",
       "VocalJoystick.Infrastructure >= 1.0.0",
-      "VocalJoystick.Input >= 1.0.0"
+      "VocalJoystick.Input >= 1.0.0",
+      "VocalJoystick.Recognition >= 1.0.0"
     ]
   },
   "packageFolders": {
@@ -357,6 +376,9 @@
             },
             "C:\\work\\trash\\VocalJoystick\\VocalJoystick.Input\\VocalJoystick.Input.csproj": {
               "projectPath": "C:\\work\\trash\\VocalJoystick\\VocalJoystick.Input\\VocalJoystick.Input.csproj"
+            },
+            "C:\\work\\trash\\VocalJoystick\\VocalJoystick.Recognition\\VocalJoystick.Recognition.csproj": {
+              "projectPath": "C:\\work\\trash\\VocalJoystick\\VocalJoystick.Recognition\\VocalJoystick.Recognition.csproj"
             }
           }
         }

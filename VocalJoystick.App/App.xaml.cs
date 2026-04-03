@@ -7,6 +7,7 @@ using VocalJoystick.Infrastructure;
 using VocalJoystick.Infrastructure.Logging;
 using VocalJoystick.Infrastructure.Persistence;
 using VocalJoystick.Infrastructure.Stubs;
+using VocalJoystick.Recognition;
 
 namespace VocalJoystick.App;
 
@@ -37,7 +38,7 @@ public partial class App : Application
         services.RegisterSingleton<IProfileRepository>(sp => new JsonProfileRepository(sp.GetRequiredService<IAppStorageLocation>()));
         services.RegisterSingleton<ISettingsRepository>(sp => new JsonSettingsRepository(sp.GetRequiredService<IAppStorageLocation>()));
         services.RegisterSingleton<IAudioCaptureService>(_ => new NAudioCaptureService());
-        services.RegisterSingleton<IVoiceActivityDetector>(_ => new StubVoiceActivityDetector());
+        services.RegisterSingleton<IVoiceActivityDetector>(_ => new EnergyVoiceActivityDetector());
         services.RegisterSingleton<IPitchDetector>(_ => new StubPitchDetector());
         services.RegisterSingleton<IFeatureExtractor>(_ => new StubFeatureExtractor());
         services.RegisterSingleton<ICommandRecognizer>(_ => new StubCommandRecognizer());
@@ -47,6 +48,7 @@ public partial class App : Application
             sp.GetRequiredService<IProfileRepository>(),
             sp.GetRequiredService<ISettingsRepository>(),
             sp.GetRequiredService<IAudioCaptureService>(),
+            sp.GetRequiredService<IVoiceActivityDetector>(),
             sp.GetRequiredService<ILogger>()));
 
         services.RegisterSingleton<MainWindow>(sp => new MainWindow(sp.GetRequiredService<MainWindowViewModel>()));

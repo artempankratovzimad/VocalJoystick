@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 using VocalJoystick.Core.Interfaces;
 using VocalJoystick.Core.Models;
+using VocalJoystick.Recognition;
 
 namespace VocalJoystick.App.ViewModels;
 
@@ -13,8 +14,9 @@ public sealed class MainWindowViewModel : ViewModelBase
 {
     private readonly IProfileRepository _profileRepository;
     private readonly ISettingsRepository _settingsRepository;
-    private readonly ILogger _logger;
     private readonly IAudioCaptureService _audioCaptureService;
+    private readonly IVoiceActivityDetector _voiceActivityDetector;
+    private readonly ILogger _logger;
     private readonly SynchronizationContext _uiContext;
 
     private string _microphoneStatus = "Inactive";
@@ -27,20 +29,28 @@ public sealed class MainWindowViewModel : ViewModelBase
     private AppSettings _currentSettings = AppSettings.CreateDefault();
     private IReadOnlyList<ActionConfigurationStatus> _actionStatuses = Array.Empty<ActionConfigurationStatus>();
     private string? _selectedMicrophoneId;
+    private FrameProcessingSettings _frameSettings = FrameProcessingSettings.CreateDefault();
+    private double _latestRms;
+    private bool _vadActive;
+    private string _vadState = "Inactive";
 
     public MainWindowViewModel(
         IProfileRepository profileRepository,
         ISettingsRepository settingsRepository,
         IAudioCaptureService audioCaptureService,
+        IVoiceActivityDetector voiceActivityDetector,
         ILogger logger)
     {
         _profileRepository = profileRepository;
         _settingsRepository = settingsRepository;
         _audioCaptureService = audioCaptureService;
+        _voiceActivityDetector = voiceActivityDetector;
         _logger = logger;
         _uiContext = SynchronizationContext.Current ?? new SynchronizationContext();
+        _selectedMicrophoneId = _audioCaptureService.SelectedDevice?.Id;
 
         _audioCaptureService.SignalLevelUpdated += (_, level) => _uiContext.Post(_ => UpdateSignalLevel(level), null);
+        _audioCaptureService.BufferCaptured += OnBufferCaptured;
 
         ConfigurationModeCommand = new DelegateCommand(() =>
         {
@@ -116,6 +126,44 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
     }
 
+    public string SelectedMicrophoneName => _audioCaptureService.SelectedDevice?.Name ?? "(none)";
+
+    public double LatestRms
+    {
+        get => _latestRms;
+        private set => SetProperty(ref _latestRms, value);
+    }
+
+    public bool VADActive
+    {
+        get => _vadActive;
+        private set => SetProperty(ref _vadActive, value);
+    }
+
+    public string VadState
+    {
+        get => _vadState;
+        private set => SetProperty(ref _vadState, value);
+    }
+
+    public double VadThreshold
+    {
+        get => _frameSettings.VadThreshold;
+        set => UpdateFrameSettings(_frameSettings.WithThreshold(value));
+    }
+
+    public int FrameSize
+    {
+        get => _frameSettings.FrameSize;
+        set => UpdateFrameSettings(_frameSettings.WithFrameSize(value));
+    }
+
+    public double FrameOverlap
+    {
+        get => _frameSettings.Overlap;
+        set => UpdateFrameSettings(_frameSettings.WithOverlap(value));
+    }
+
     public string SettingsSummary =>
         $"Mode: {CurrentSettings.LastMode}; Profile: {CurrentSettings.ActiveProfileId ?? "(none)"}; Mic: {SelectedMicrophoneName}";
 
@@ -150,6 +198,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         var settings = await _settingsRepository.LoadSettingsAsync(cancellationToken).ConfigureAwait(true);
         CurrentSettings = settings;
         CurrentMode = settings.LastMode;
+        _frameSettings = settings.FrameSettings;
 
         _activeProfile = await _profileRepository.GetActiveProfileAsync(cancellationToken).ConfigureAwait(true);
         if (_activeProfile is null)
@@ -160,7 +209,6 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
 
         OnPropertyChanged(nameof(CurrentProfileDisplay));
-
         CurrentSettings = CurrentSettings.WithMode(CurrentMode, _activeProfile?.Id);
         var profile = _activeProfile ?? throw new InvalidOperationException("Active profile must exist");
         var configuration = await _profileRepository.LoadOrCreateProfileConfigurationAsync(profile, cancellationToken).ConfigureAwait(true);
@@ -172,7 +220,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         _logger.LogInfo("Main view model initialized");
     }
 
-    public void UpdateSignalLevel(double level)
+    private void UpdateSignalLevel(double level)
     {
         var percent = Math.Clamp(level, 0, 1) * 100;
         SignalLevelPercent = percent;
@@ -195,19 +243,17 @@ public sealed class MainWindowViewModel : ViewModelBase
         try
         {
             var wasCapturing = _audioCaptureService.IsCapturing;
-
             if (wasCapturing)
             {
                 await _audioCaptureService.StopAsync(cancellationToken).ConfigureAwait(true);
             }
 
-        await _audioCaptureService.SelectDeviceAsync(deviceId, cancellationToken).ConfigureAwait(true);
-        _selectedMicrophoneId = _audioCaptureService.SelectedDevice?.Id;
-        OnPropertyChanged(nameof(SelectedMicrophoneId));
-        OnPropertyChanged(nameof(AvailableMicrophones));
-        OnPropertyChanged(nameof(SelectedMicrophoneName));
-        CurrentSettings = CurrentSettings.WithDevice(_audioCaptureService.SelectedDevice?.Id);
-        OnPropertyChanged(nameof(SettingsSummary));
+            await _audioCaptureService.SelectDeviceAsync(deviceId, cancellationToken).ConfigureAwait(true);
+            _selectedMicrophoneId = _audioCaptureService.SelectedDevice?.Id;
+            OnPropertyChanged(nameof(SelectedMicrophoneId));
+            OnPropertyChanged(nameof(SelectedMicrophoneName));
+            CurrentSettings = CurrentSettings.WithDevice(_audioCaptureService.SelectedDevice?.Id);
+            OnPropertyChanged(nameof(SettingsSummary));
             await _settingsRepository.SaveSettingsAsync(CurrentSettings, cancellationToken).ConfigureAwait(true);
 
             if (wasCapturing)
@@ -260,6 +306,39 @@ public sealed class MainWindowViewModel : ViewModelBase
         _logger.LogInfo("Capture stopped");
     }
 
+    private void UpdateFrameSettings(FrameProcessingSettings newSettings, bool persist = true)
+    {
+        _frameSettings = newSettings;
+        CurrentSettings = CurrentSettings.WithFrameSettings(newSettings);
+        OnPropertyChanged(nameof(FrameSize));
+        OnPropertyChanged(nameof(FrameOverlap));
+        OnPropertyChanged(nameof(VadThreshold));
+
+        if (persist)
+        {
+            _ = _settingsRepository.SaveSettingsAsync(CurrentSettings, CancellationToken.None);
+        }
+    }
+
+    private void OnBufferCaptured(object? sender, AudioBufferEventArgs args)
+    {
+        var frames = FrameSegmenter.Segment(args.Buffer.Samples, _frameSettings, args.Buffer.SampleRate).ToList();
+        if (!frames.Any())
+        {
+            return;
+        }
+
+        var lastFrame = frames.Last();
+        var result = _voiceActivityDetector.Analyze(lastFrame, _frameSettings);
+        _uiContext.Post(_ =>
+        {
+            LatestRms = result.Rms;
+            VADActive = result.IsActive;
+            VadState = result.IsActive ? "Active" : "Inactive";
+            UpdateSignalLevel(result.Rms);
+        }, null);
+    }
+
     private void FireAndForget(Task task)
     {
         task.ContinueWith(t =>
@@ -283,6 +362,4 @@ public sealed class MainWindowViewModel : ViewModelBase
         _actionStatuses = statuses;
         OnPropertyChanged(nameof(ActionStatuses));
     }
-
-    public string SelectedMicrophoneName => _audioCaptureService.SelectedDevice?.Name ?? "(none)";
 }

@@ -5,6 +5,7 @@
     <ProjectReference Include="..\VocalJoystick.Infrastructure\VocalJoystick.Infrastructure.csproj" />
     <ProjectReference Include="..\VocalJoystick.Input\VocalJoystick.Input.csproj" />
     <ProjectReference Include="..\VocalJoystick.Audio\VocalJoystick.Audio.csproj" />
+    <ProjectReference Include="..\VocalJoystick.Recognition\VocalJoystick.Recognition.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

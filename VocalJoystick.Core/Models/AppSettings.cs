@@ -2,11 +2,11 @@ using System;
 
 namespace VocalJoystick.Core.Models;
 
-public sealed record AppSettings(AppMode LastMode, string? ActiveProfileId, string? SelectedMicrophoneId)
+public sealed record AppSettings(AppMode LastMode, string? ActiveProfileId, string? SelectedMicrophoneId, FrameProcessingSettings FrameSettings)
 {
     public DateTimeOffset LastUpdated { get; init; } = DateTimeOffset.UtcNow;
 
-    public static AppSettings CreateDefault() => new(AppMode.Stopped, null, null);
+    public static AppSettings CreateDefault() => new(AppMode.Stopped, null, null, FrameProcessingSettings.CreateDefault());
 
     public AppSettings WithMode(AppMode mode, string? profileId) => this with
     {
@@ -18,6 +18,12 @@ public sealed record AppSettings(AppMode LastMode, string? ActiveProfileId, stri
     public AppSettings WithDevice(string? deviceId) => this with
     {
         SelectedMicrophoneId = deviceId,
+        LastUpdated = DateTimeOffset.UtcNow
+    };
+
+    public AppSettings WithFrameSettings(FrameProcessingSettings settings) => this with
+    {
+        FrameSettings = settings,
         LastUpdated = DateTimeOffset.UtcNow
     };
 }
