@@ -49,6 +49,9 @@ public sealed class MainWindowViewModel : ViewModelBase
     private VocalAction? _recognizedDirection;
     private double _directionRecognitionConfidence;
     private DirectionalRecognitionDebugState _directionRecognitionDebug = DirectionalRecognitionDebugState.Idle;
+    private readonly IMouseController _mouseController;
+    private CancellationTokenSource? _movementLoopCts;
+    private static readonly TimeSpan MovementTickInterval = TimeSpan.FromMilliseconds(40);
     private static readonly VocalAction[] DirectionalActions =
         { VocalAction.MoveUp, VocalAction.MoveDown, VocalAction.MoveLeft, VocalAction.MoveRight };
 
@@ -61,6 +64,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         ISampleRecorder sampleRecorder,
         IShortClickRecognitionEngine clickRecognitionEngine,
         ICommandRecognizer commandRecognizer,
+        IMouseController mouseController,
         ILogger logger)
     {
         _profileRepository = profileRepository;
@@ -71,6 +75,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         _sampleRecorder = sampleRecorder;
         _clickRecognitionEngine = clickRecognitionEngine;
         _commandRecognizer = commandRecognizer;
+        _mouseController = mouseController;
         _logger = logger;
         _uiContext = SynchronizationContext.Current ?? new SynchronizationContext();
         _selectedMicrophoneId = _audioCaptureService.SelectedDevice?.Id;
@@ -205,6 +210,12 @@ public sealed class MainWindowViewModel : ViewModelBase
         set => UpdateClickCooldownMs(value);
     }
 
+    public double MovementSpeed
+    {
+        get => CurrentSettings.MovementSpeed;
+        set => UpdateMovementSpeed(value);
+    }
+
     public IReadOnlyList<AudioDeviceInfo> AvailableMicrophones => _audioCaptureService.AvailableDevices;
 
     public string? SelectedMicrophoneId
@@ -292,6 +303,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             if (SetProperty(ref _currentSettings, value))
             {
                 OnPropertyChanged(nameof(SettingsSummary));
+                OnPropertyChanged(nameof(MovementSpeed));
             }
         }
     }
@@ -506,6 +518,7 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         CaptureState = "Stopped";
         _logger.LogInfo("Capture stopped");
+        ResetDirectionState();
     }
 
     private void UpdateFrameSettings(FrameProcessingSettings newSettings, bool persist = true)
@@ -543,6 +556,18 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         CurrentSettings = CurrentSettings.WithClickCooldownMs(cooldownMs);
         OnPropertyChanged(nameof(ClickCooldownMs));
+        _ = _settingsRepository.SaveSettingsAsync(CurrentSettings, CancellationToken.None);
+    }
+
+    private void UpdateMovementSpeed(double speed)
+    {
+        if (Math.Abs(CurrentSettings.MovementSpeed - speed) < 1e-3)
+        {
+            return;
+        }
+
+        CurrentSettings = CurrentSettings.WithMovementSpeed(speed);
+        OnPropertyChanged(nameof(MovementSpeed));
         _ = _settingsRepository.SaveSettingsAsync(CurrentSettings, CancellationToken.None);
     }
 
@@ -616,6 +641,8 @@ public sealed class MainWindowViewModel : ViewModelBase
         {
             return;
         }
+
+        await HandleClickRecognitionAsync(result).ConfigureAwait(false);
 
         _uiContext.Post(_ =>
         {
@@ -725,8 +752,105 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     private void UpdateDirectionRecognitionState(DirectionalRecognitionResult result)
     {
+        var previousDirection = RecognizedDirection;
         RecognizedDirection = result.ActiveDirection;
         DirectionRecognitionConfidence = result.Confidence;
         DirectionRecognitionDebug = result.Debug;
+
+        if (RecognizedDirection is not null)
+        {
+            StartMovementLoop();
+        }
+        else if (previousDirection is not null)
+        {
+            StopMovementLoop();
+        }
+    }
+
+    private async Task HandleClickRecognitionAsync(RecognitionResult result)
+    {
+        try
+        {
+            switch (result.Action)
+            {
+                case VocalAction.LeftClick:
+                case VocalAction.RightClick:
+                    await _mouseController.ClickAsync(result.Action, CancellationToken.None).ConfigureAwait(false);
+                    break;
+                case VocalAction.DoubleClick:
+                    await _mouseController.DoubleClickAsync(CancellationToken.None).ConfigureAwait(false);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Mouse action failed", ex);
+        }
+    }
+
+    private void StartMovementLoop()
+    {
+        if (RecognizedDirection is null || _movementLoopCts is not null)
+        {
+            return;
+        }
+
+        var cts = new CancellationTokenSource();
+        _movementLoopCts = cts;
+        _ = MovementLoopAsync(cts);
+    }
+
+    private async Task MovementLoopAsync(CancellationTokenSource cts)
+    {
+        var token = cts.Token;
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                var direction = RecognizedDirection;
+                if (direction is null)
+                {
+                    break;
+                }
+
+                var confidence = Math.Clamp(DirectionRecognitionConfidence, 0, 1);
+                var intensity = MovementSpeed * confidence * MovementTickInterval.TotalSeconds;
+                if (intensity > double.Epsilon)
+                {
+                    await _mouseController.MoveAsync(direction.Value, intensity, token).ConfigureAwait(false);
+                }
+
+                await Task.Delay(MovementTickInterval, token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Movement loop failed", ex);
+        }
+        finally
+        {
+            if (_movementLoopCts == cts)
+            {
+                _movementLoopCts = null;
+            }
+
+            cts.Dispose();
+        }
+    }
+
+    private void StopMovementLoop()
+    {
+        _movementLoopCts?.Cancel();
+    }
+
+    private void ResetDirectionState()
+    {
+        RecognizedDirection = null;
+        DirectionRecognitionConfidence = 0;
+        DirectionRecognitionDebug = DirectionalRecognitionDebugState.Idle;
+        StopMovementLoop();
     }
 }

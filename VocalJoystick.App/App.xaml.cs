@@ -8,7 +8,7 @@ using VocalJoystick.Infrastructure;
 using VocalJoystick.Infrastructure.Logging;
 using VocalJoystick.Infrastructure.Persistence;
 using VocalJoystick.Infrastructure.Recording;
-using VocalJoystick.Infrastructure.Stubs;
+using VocalJoystick.Input;
 using VocalJoystick.Recognition;
 
 namespace VocalJoystick.App;
@@ -50,7 +50,7 @@ public partial class App : Application
             sp.GetRequiredService<ILogger>(),
             sp.GetRequiredService<IFeatureExtractor>()));
         services.RegisterSingleton<ICommandRecognizer>(_ => new DirectionalCommandRecognizer(new DirectionalRecognitionSettings()));
-        services.RegisterSingleton<IMouseController>(_ => new StubMouseController());
+        services.RegisterSingleton<IMouseController>(sp => new Win32MouseController(sp.GetRequiredService<ILogger>()));
 
         services.RegisterSingleton<MainWindowViewModel>(sp => new MainWindowViewModel(
             sp.GetRequiredService<IProfileRepository>(),
@@ -61,6 +61,7 @@ public partial class App : Application
             sp.GetRequiredService<ISampleRecorder>(),
             sp.GetRequiredService<IShortClickRecognitionEngine>(),
             sp.GetRequiredService<ICommandRecognizer>(),
+            sp.GetRequiredService<IMouseController>(),
             sp.GetRequiredService<ILogger>()));
 
         services.RegisterSingleton<MainWindow>(sp => new MainWindow(sp.GetRequiredService<MainWindowViewModel>()));

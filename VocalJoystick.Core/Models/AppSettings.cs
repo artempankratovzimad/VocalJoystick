@@ -7,6 +7,7 @@ public sealed record AppSettings(AppMode LastMode, string? ActiveProfileId, stri
     public DateTimeOffset LastUpdated { get; init; } = DateTimeOffset.UtcNow;
     public double ClickConfidenceThreshold { get; init; } = 0.7;
     public int ClickCooldownMs { get; init; } = 400;
+    public double MovementSpeed { get; init; } = 320;
 
     public static AppSettings CreateDefault() => new(AppMode.Stopped, null, null, FrameProcessingSettings.CreateDefault());
 
@@ -38,6 +39,12 @@ public sealed record AppSettings(AppMode LastMode, string? ActiveProfileId, stri
     public AppSettings WithClickCooldownMs(int cooldownMs) => this with
     {
         ClickCooldownMs = Math.Max(0, cooldownMs),
+        LastUpdated = DateTimeOffset.UtcNow
+    };
+
+    public AppSettings WithMovementSpeed(double speed) => this with
+    {
+        MovementSpeed = Math.Max(0, speed),
         LastUpdated = DateTimeOffset.UtcNow
     };
 }
