@@ -26,3 +26,12 @@ C:\work\trash\VocalJoystick\VocalJoystick.App\obj\Debug\net8.0-windows\VocalJoys
 C:\work\trash\VocalJoystick\VocalJoystick.App\obj\Debug\net8.0-windows\VocalJoystick.App.genruntimeconfig.cache
 C:\work\trash\VocalJoystick\VocalJoystick.App\obj\Debug\net8.0-windows\ref\VocalJoystick.App.dll
 C:\work\trash\VocalJoystick\VocalJoystick.App\obj\Debug\net8.0-windows\VocalJoystick.App.sourcelink.json
+C:\work\trash\VocalJoystick\VocalJoystick.App\bin\Debug\net8.0-windows\NAudio.dll
+C:\work\trash\VocalJoystick\VocalJoystick.App\bin\Debug\net8.0-windows\NAudio.Asio.dll
+C:\work\trash\VocalJoystick\VocalJoystick.App\bin\Debug\net8.0-windows\NAudio.Core.dll
+C:\work\trash\VocalJoystick\VocalJoystick.App\bin\Debug\net8.0-windows\NAudio.Midi.dll
+C:\work\trash\VocalJoystick\VocalJoystick.App\bin\Debug\net8.0-windows\NAudio.Wasapi.dll
+C:\work\trash\VocalJoystick\VocalJoystick.App\bin\Debug\net8.0-windows\NAudio.WinForms.dll
+C:\work\trash\VocalJoystick\VocalJoystick.App\bin\Debug\net8.0-windows\NAudio.WinMM.dll
+C:\work\trash\VocalJoystick\VocalJoystick.App\bin\Debug\net8.0-windows\VocalJoystick.Audio.dll
+C:\work\trash\VocalJoystick\VocalJoystick.App\bin\Debug\net8.0-windows\VocalJoystick.Audio.pdb

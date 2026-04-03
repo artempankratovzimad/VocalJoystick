@@ -1,4 +1,6 @@
 using System;
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -9,12 +11,38 @@ namespace VocalJoystick.Infrastructure.Stubs;
 
 public sealed class StubAudioCaptureService : IAudioCaptureService
 {
+    private readonly List<AudioDeviceInfo> _devices = new()
+    {
+        new("stub-1", "Stub Microphone", 0)
+    };
+
+    private double _signalLevel;
+
     public bool IsCapturing { get; private set; }
     public event EventHandler<AudioBufferEventArgs>? BufferCaptured;
+    public event EventHandler<double>? SignalLevelUpdated;
+
+    public IReadOnlyList<AudioDeviceInfo> AvailableDevices => _devices;
+    public AudioDeviceInfo? SelectedDevice { get; private set; }
+    public double CurrentSignalLevel => _signalLevel;
+
+    public StubAudioCaptureService()
+    {
+        SelectedDevice = _devices.First();
+    }
+
+    public Task SelectDeviceAsync(string? deviceId, CancellationToken cancellationToken)
+    {
+        SelectedDevice = _devices.FirstOrDefault(device => device.Id == deviceId) ?? _devices.First();
+        SignalLevelUpdated?.Invoke(this, _signalLevel);
+        return Task.CompletedTask;
+    }
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
         IsCapturing = true;
+        _signalLevel = 0.5;
+        SignalLevelUpdated?.Invoke(this, _signalLevel);
         BufferCaptured?.Invoke(this, new AudioBufferEventArgs(new AudioBuffer(Array.Empty<float>(), 0)));
         return Task.CompletedTask;
     }
@@ -22,6 +50,8 @@ public sealed class StubAudioCaptureService : IAudioCaptureService
     public Task StopAsync(CancellationToken cancellationToken)
     {
         IsCapturing = false;
+        _signalLevel = 0;
+        SignalLevelUpdated?.Invoke(this, _signalLevel);
         return Task.CompletedTask;
     }
 }
