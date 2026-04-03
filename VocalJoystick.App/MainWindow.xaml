@@ -161,6 +161,21 @@
                 <TextBlock FontSize="18" FontWeight="Bold" Foreground="White" Text="Current Command" />
                 <TextBlock FontSize="16" Foreground="#FF8AB4F8" Text="{Binding CurrentCommand}" />
                 <TextBlock FontSize="14" Foreground="#FFCFE2FF" Text="Mode: {Binding ModeDisplay}" Margin="0 12 0 0" />
+                <TextBlock FontSize="14" Text="{Binding StatusMessage}" Margin="0 4 0 0" TextWrapping="Wrap">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="#FFCFE2FF" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding StatusSeverity}" Value="Warning">
+                                    <Setter Property="Foreground" Value="#FFFFC107" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding StatusSeverity}" Value="Error">
+                                    <Setter Property="Foreground" Value="#FFFF6B6B" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
             </StackPanel>
         </Border>
     </Grid>

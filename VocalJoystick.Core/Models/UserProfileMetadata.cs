@@ -9,6 +9,6 @@ public sealed class UserProfileMetadata
     public string DisplayName { get; init; } = "Default";
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
-    public AppMode LastMode { get; set; } = AppMode.Stopped;
+    public AppMode LastMode { get; set; } = AppMode.Idle;
     public Dictionary<VocalAction, string>? ActionAliases { get; init; }
 }

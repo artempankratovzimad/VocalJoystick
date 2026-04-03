@@ -28,7 +28,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     private double _signalLevelPercent;
     private string _captureState = "Stopped";
     private string _currentCommand = "Awaiting activation";
-    private AppMode _currentMode = AppMode.Stopped;
+    private AppMode _currentMode = AppMode.Idle;
     private UserProfileMetadata? _activeProfile;
     private AppSettings _currentSettings = AppSettings.CreateDefault();
     private IReadOnlyList<ActionConfigurationStatus> _actionStatuses = Array.Empty<ActionConfigurationStatus>();
@@ -44,16 +44,21 @@ public sealed class MainWindowViewModel : ViewModelBase
     private readonly Dictionary<VocalAction, ActionSampleState> _actionStateMap;
     private readonly IShortClickRecognitionEngine _clickRecognitionEngine;
     private readonly ICommandRecognizer _commandRecognizer;
+    private readonly IMouseController _mouseController;
+    private readonly DelegateCommand _configurationModeCommand;
+    private readonly DelegateCommand _workingModeCommand;
+    private readonly DelegateCommand _stopCommand;
     private string _clickRecognitionStatus = "Awaiting click events";
     private double _clickRecognitionConfidence;
     private VocalAction? _recognizedDirection;
     private double _directionRecognitionConfidence;
     private DirectionalRecognitionDebugState _directionRecognitionDebug = DirectionalRecognitionDebugState.Idle;
-    private readonly IMouseController _mouseController;
     private CancellationTokenSource? _movementLoopCts;
     private static readonly TimeSpan MovementTickInterval = TimeSpan.FromMilliseconds(40);
     private static readonly VocalAction[] DirectionalActions =
         { VocalAction.MoveUp, VocalAction.MoveDown, VocalAction.MoveLeft, VocalAction.MoveRight };
+    private string _statusMessage = "Select a mode to begin.";
+    private string _statusSeverity = "Info";
 
     public MainWindowViewModel(
         IProfileRepository profileRepository,
@@ -83,23 +88,17 @@ public sealed class MainWindowViewModel : ViewModelBase
         _audioCaptureService.SignalLevelUpdated += (_, level) => _uiContext.Post(_ => UpdateSignalLevel(level), null);
         _audioCaptureService.BufferCaptured += OnBufferCaptured;
 
-        ConfigurationModeCommand = new DelegateCommand(() =>
-        {
-            ApplyMode(AppMode.Configuration, "Recording microphone for configuration", "Loading configuration canvas");
-            FireAndForget(StopCaptureAsync());
-        });
+        _configurationModeCommand = new DelegateCommand(
+            () => FireAndForget(StartConfigurationFlowAsync()),
+            () => CurrentMode != AppMode.Configuration);
 
-        WorkingModeCommand = new DelegateCommand(() =>
-        {
-            ApplyMode(AppMode.Working, "Listening for trained patterns", "Ready to execute commands");
-            FireAndForget(StartCaptureAsync());
-        });
+        _workingModeCommand = new DelegateCommand(
+            () => FireAndForget(StartWorkingFlowAsync()),
+            CanStartWorking);
 
-        StopCommand = new DelegateCommand(() =>
-        {
-            ApplyMode(AppMode.Stopped, "Microphone paused", "Working loop paused");
-            FireAndForget(StopCaptureAsync());
-        });
+        _stopCommand = new DelegateCommand(
+            () => FireAndForget(StopModeAsync("Microphone paused", "Working loop paused", "Capture stopped.")),
+            () => CurrentMode != AppMode.Stopped);
 
         SettingsCommand = new DelegateCommand(() => CurrentCommand = "Settings dialog placeholder");
 
@@ -116,10 +115,10 @@ public sealed class MainWindowViewModel : ViewModelBase
             action => action.HasValue && !_actionStateMap[action.Value].IsRecording);
     }
 
-    public ICommand ConfigurationModeCommand { get; }
-    public ICommand WorkingModeCommand { get; }
-    public ICommand StopCommand { get; }
-    public ICommand SettingsCommand { get; }
+    public DelegateCommand ConfigurationModeCommand => _configurationModeCommand;
+    public DelegateCommand WorkingModeCommand => _workingModeCommand;
+    public DelegateCommand StopCommand => _stopCommand;
+    public DelegateCommand SettingsCommand { get; }
 
     public string MicrophoneStatus
     {
@@ -159,6 +158,18 @@ public sealed class MainWindowViewModel : ViewModelBase
     public string CurrentProfileDisplay => _activeProfile?.DisplayName ?? "(no profile)";
 
     public IReadOnlyList<ActionConfigurationStatus> ActionStatuses => _actionStatuses;
+
+    public string StatusMessage
+    {
+        get => _statusMessage;
+        private set => SetProperty(ref _statusMessage, value);
+    }
+
+    public string StatusSeverity
+    {
+        get => _statusSeverity;
+        private set => SetProperty(ref _statusSeverity, value);
+    }
 
     public string ClickRecognitionStatus
     {
@@ -318,6 +329,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             if (SetProperty(ref _currentMode, value))
             {
                 OnPropertyChanged(nameof(ModeDisplay));
+                UpdateCommandStates();
             }
         }
     }
@@ -326,29 +338,16 @@ public sealed class MainWindowViewModel : ViewModelBase
     {
         var settings = await _settingsRepository.LoadSettingsAsync(cancellationToken).ConfigureAwait(true);
         CurrentSettings = settings;
-        CurrentMode = settings.LastMode;
         _frameSettings = settings.FrameSettings;
 
-        _activeProfile = await _profileRepository.GetActiveProfileAsync(cancellationToken).ConfigureAwait(true);
-        if (_activeProfile is null)
-        {
-            _activeProfile = new UserProfileMetadata { DisplayName = "Default profile" };
-            await _profileRepository.SaveProfileAsync(_activeProfile, cancellationToken).ConfigureAwait(true);
-            await _profileRepository.SetActiveProfileAsync(_activeProfile, cancellationToken).ConfigureAwait(true);
-        }
-
+        await EnsureProfileConfigurationLoadedAsync(cancellationToken).ConfigureAwait(true);
         OnPropertyChanged(nameof(CurrentProfileDisplay));
-        CurrentSettings = CurrentSettings.WithMode(CurrentMode, _activeProfile?.Id);
-        var profile = _activeProfile ?? throw new InvalidOperationException("Active profile must exist");
-        var configuration = await _profileRepository.LoadOrCreateProfileConfigurationAsync(profile, cancellationToken).ConfigureAwait(true);
-        _profileConfiguration = configuration;
-        RefreshActionStatuses(configuration);
-        UpdateActionSampleStates();
         _clickRecognitionEngine.Reset();
 
         await SelectMicrophoneAsync(CurrentSettings.SelectedMicrophoneId, cancellationToken).ConfigureAwait(true);
         UpdateSignalLevel(0);
         CaptureState = _audioCaptureService.IsCapturing ? "Capturing" : "Stopped";
+        ApplyMode(AppMode.Idle, "Idle", "Awaiting mode selection");
         _logger.LogInfo("Main view model initialized");
     }
 
@@ -486,6 +485,12 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     private async Task StartCaptureAsync()
     {
+        if (_audioCaptureService.IsCapturing)
+        {
+            CaptureState = "Capturing";
+            return;
+        }
+
         try
         {
             await SelectMicrophoneAsync(SelectedMicrophoneId, CancellationToken.None).ConfigureAwait(true);
@@ -734,6 +739,18 @@ public sealed class MainWindowViewModel : ViewModelBase
         _actionStatuses = statuses;
         OnPropertyChanged(nameof(ActionStatuses));
         UpdateDirectionalTemplates(configuration);
+        UpdateCommandStates();
+        if (CurrentMode is AppMode.Idle or AppMode.Stopped)
+        {
+            if (HasDirectionalTemplates(configuration))
+            {
+                SetStatusMessage("Directional templates are ready; start Working mode.", "Info");
+            }
+            else
+            {
+                SetStatusMessage("Record MoveUp/Down/Left/Right before entering Working mode.", "Warning");
+            }
+        }
     }
 
     private void UpdateActionSampleStates()
@@ -748,6 +765,125 @@ public sealed class MainWindowViewModel : ViewModelBase
             var configuration = _profileConfiguration.ActionConfigurations[kvp.Key];
             kvp.Value.UpdateMetadata(configuration.Samples, configuration.Template);
         }
+    }
+
+    private async Task StartConfigurationFlowAsync()
+    {
+        if (CurrentMode == AppMode.Configuration)
+        {
+            SetStatusMessage("Already in configuration mode.", "Info");
+            return;
+        }
+
+        try
+        {
+            await StopCaptureAsync().ConfigureAwait(true);
+            await EnsureProfileConfigurationLoadedAsync(CancellationToken.None).ConfigureAwait(true);
+            await StartCaptureAsync().ConfigureAwait(true);
+            ApplyMode(AppMode.Configuration, "Recording microphone for configuration", "Ready to record action samples");
+            SetStatusMessage("Configuration mode active; record each action sample.", "Info");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Configuration mode failed to start", ex);
+            SetStatusMessage("Configuration mode could not start. Check the microphone.", "Error");
+        }
+    }
+
+    private async Task StartWorkingFlowAsync()
+    {
+        if (CurrentMode == AppMode.Working)
+        {
+            SetStatusMessage("Already in working mode.", "Info");
+            return;
+        }
+
+        try
+        {
+            await EnsureProfileConfigurationLoadedAsync(CancellationToken.None).ConfigureAwait(true);
+
+            if (_profileConfiguration is null)
+            {
+                SetStatusMessage("Profile configuration unavailable.", "Error");
+                return;
+            }
+
+            if (!HasDirectionalTemplates(_profileConfiguration))
+            {
+                SetStatusMessage("Record MoveUp, MoveDown, MoveLeft, and MoveRight before entering working mode.", "Warning");
+                return;
+            }
+
+            await StopCaptureAsync().ConfigureAwait(true);
+            await StartCaptureAsync().ConfigureAwait(true);
+            ApplyMode(AppMode.Working, "Listening for trained patterns", "Ready to execute commands");
+            SetStatusMessage("Working mode active; vocal gestures now move the cursor.", "Info");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Working mode failed to start", ex);
+            SetStatusMessage("Unable to start working mode. Check microphone and templates.", "Error");
+        }
+    }
+
+    private async Task StopModeAsync(string micState, string commandState, string statusMessage, string severity = "Info")
+    {
+        await StopCaptureAsync().ConfigureAwait(true);
+        ApplyMode(AppMode.Stopped, micState, commandState);
+        SetStatusMessage(statusMessage, severity);
+    }
+
+    private bool CanStartWorking()
+    {
+        return CurrentMode != AppMode.Working && _profileConfiguration is not null && HasDirectionalTemplates(_profileConfiguration);
+    }
+
+    private async Task EnsureProfileConfigurationLoadedAsync(CancellationToken cancellationToken)
+    {
+        if (_activeProfile is null)
+        {
+            _activeProfile = await _profileRepository.GetActiveProfileAsync(cancellationToken).ConfigureAwait(true);
+            if (_activeProfile is null)
+            {
+                _activeProfile = new UserProfileMetadata { DisplayName = "Default profile" };
+                await _profileRepository.SaveProfileAsync(_activeProfile, cancellationToken).ConfigureAwait(true);
+                await _profileRepository.SetActiveProfileAsync(_activeProfile, cancellationToken).ConfigureAwait(true);
+            }
+        }
+
+        var profile = _activeProfile ?? throw new InvalidOperationException("Active profile must exist");
+        var configuration = await _profileRepository.LoadOrCreateProfileConfigurationAsync(profile, cancellationToken).ConfigureAwait(true);
+        _profileConfiguration = configuration;
+        RefreshActionStatuses(configuration);
+        UpdateActionSampleStates();
+        _commandRecognizer.UpdateTemplates(BuildDirectionalTemplates(configuration));
+        OnPropertyChanged(nameof(CurrentProfileDisplay));
+    }
+
+    private static bool HasDirectionalTemplates(ProfileConfiguration configuration)
+    {
+        foreach (var action in DirectionalActions)
+        {
+            if (!configuration.ActionConfigurations.TryGetValue(action, out var config) || config.Template.SampleCount == 0)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private void SetStatusMessage(string message, string severity)
+    {
+        StatusMessage = message;
+        StatusSeverity = severity;
+    }
+
+    private void UpdateCommandStates()
+    {
+        _configurationModeCommand.RaiseCanExecuteChanged();
+        _workingModeCommand.RaiseCanExecuteChanged();
+        _stopCommand.RaiseCanExecuteChanged();
     }
 
     private void UpdateDirectionRecognitionState(DirectionalRecognitionResult result)

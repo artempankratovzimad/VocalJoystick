@@ -37,7 +37,7 @@ public sealed class PersistenceTests
 
         var latest = await repo.LoadSettingsAsync(CancellationToken.None);
 
-        Assert.AreEqual(AppMode.Stopped, latest.LastMode);
+        Assert.AreEqual(AppMode.Idle, latest.LastMode);
         Assert.IsNull(latest.ActiveProfileId);
     }
 
@@ -50,7 +50,7 @@ public sealed class PersistenceTests
 
         var latest = await repo.LoadSettingsAsync(CancellationToken.None);
 
-        Assert.AreEqual(AppMode.Stopped, latest.LastMode);
+        Assert.AreEqual(AppMode.Idle, latest.LastMode);
     }
 
     [TestMethod]

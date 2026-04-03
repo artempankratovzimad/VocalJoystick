@@ -9,7 +9,7 @@ public sealed record AppSettings(AppMode LastMode, string? ActiveProfileId, stri
     public int ClickCooldownMs { get; init; } = 400;
     public double MovementSpeed { get; init; } = 320;
 
-    public static AppSettings CreateDefault() => new(AppMode.Stopped, null, null, FrameProcessingSettings.CreateDefault());
+    public static AppSettings CreateDefault() => new(AppMode.Idle, null, null, FrameProcessingSettings.CreateDefault());
 
     public AppSettings WithMode(AppMode mode, string? profileId) => this with
     {
