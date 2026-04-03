@@ -111,6 +111,7 @@
                                     <TextBlock FontSize="12" Foreground="#FFCFE2FF" Text="{Binding StatusText}" />
                                     <TextBlock FontSize="12" Foreground="#FFCFE2FF" Text="{Binding DurationText}" />
                                     <TextBlock FontSize="12" Foreground="#FFCFE2FF" Text="Samples: {Binding SampleCount}" />
+                                    <TextBlock FontSize="12" Foreground="#FF7C8CA9" Text="{Binding FeatureSummary}" TextWrapping="Wrap" />
                                     <StackPanel Orientation="Horizontal" Margin="0 8 0 0" HorizontalAlignment="Left">
                                         <Button Content="Record" Command="{Binding DataContext.StartRecordingCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding Action}" Width="90" Margin="0 0 6 0" />
                                         <Button Content="Stop" Command="{Binding DataContext.StopRecordingCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding Action}" Width="90" Margin="0 0 6 0" />

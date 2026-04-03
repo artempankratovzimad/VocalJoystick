@@ -41,8 +41,12 @@ public partial class App : Application
         services.RegisterSingleton<IAudioCaptureService>(_ => new NAudioCaptureService());
         services.RegisterSingleton<IVoiceActivityDetector>(_ => new EnergyVoiceActivityDetector());
         services.RegisterSingleton<IPitchDetector>(_ => new AutocorrelationPitchDetector());
-        services.RegisterSingleton<ISampleRecorder>(sp => new SampleRecorder(sp.GetRequiredService<IAudioCaptureService>(), sp.GetRequiredService<IAppStorageLocation>(), sp.GetRequiredService<ILogger>()));
-        services.RegisterSingleton<IFeatureExtractor>(_ => new StubFeatureExtractor());
+        services.RegisterSingleton<IFeatureExtractor>(sp => new FeatureExtractor(sp.GetRequiredService<IPitchDetector>(), sp.GetRequiredService<IVoiceActivityDetector>()));
+        services.RegisterSingleton<ISampleRecorder>(sp => new SampleRecorder(
+            sp.GetRequiredService<IAudioCaptureService>(),
+            sp.GetRequiredService<IAppStorageLocation>(),
+            sp.GetRequiredService<ILogger>(),
+            sp.GetRequiredService<IFeatureExtractor>()));
         services.RegisterSingleton<ICommandRecognizer>(_ => new StubCommandRecognizer());
         services.RegisterSingleton<IMouseController>(_ => new StubMouseController());
 
