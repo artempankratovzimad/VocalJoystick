@@ -119,6 +119,7 @@
       },
       "VocalJoystick.Infrastructure/1.0.0": {
         "dependencies": {
+          "NAudio": "2.3.0",
           "VocalJoystick.Core": "1.0.0",
           "VocalJoystick.Input": "1.0.0"
         },

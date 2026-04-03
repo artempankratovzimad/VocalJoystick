@@ -6,6 +6,7 @@ using VocalJoystick.Core.Interfaces;
 using VocalJoystick.Infrastructure;
 using VocalJoystick.Infrastructure.Logging;
 using VocalJoystick.Infrastructure.Persistence;
+using VocalJoystick.Infrastructure.Recording;
 using VocalJoystick.Infrastructure.Stubs;
 using VocalJoystick.Recognition;
 
@@ -40,6 +41,7 @@ public partial class App : Application
         services.RegisterSingleton<IAudioCaptureService>(_ => new NAudioCaptureService());
         services.RegisterSingleton<IVoiceActivityDetector>(_ => new EnergyVoiceActivityDetector());
         services.RegisterSingleton<IPitchDetector>(_ => new AutocorrelationPitchDetector());
+        services.RegisterSingleton<ISampleRecorder>(sp => new SampleRecorder(sp.GetRequiredService<IAudioCaptureService>(), sp.GetRequiredService<IAppStorageLocation>(), sp.GetRequiredService<ILogger>()));
         services.RegisterSingleton<IFeatureExtractor>(_ => new StubFeatureExtractor());
         services.RegisterSingleton<ICommandRecognizer>(_ => new StubCommandRecognizer());
         services.RegisterSingleton<IMouseController>(_ => new StubMouseController());
@@ -50,6 +52,7 @@ public partial class App : Application
             sp.GetRequiredService<IAudioCaptureService>(),
             sp.GetRequiredService<IVoiceActivityDetector>(),
             sp.GetRequiredService<IPitchDetector>(),
+            sp.GetRequiredService<ISampleRecorder>(),
             sp.GetRequiredService<ILogger>()));
 
         services.RegisterSingleton<MainWindow>(sp => new MainWindow(sp.GetRequiredService<MainWindowViewModel>()));

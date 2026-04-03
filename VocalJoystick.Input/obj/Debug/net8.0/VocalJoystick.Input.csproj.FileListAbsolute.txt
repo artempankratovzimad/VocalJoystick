@@ -8,9 +8,9 @@ C:\work\trash\VocalJoystick\VocalJoystick.Input\obj\Debug\net8.0\VocalJoystick.I
 C:\work\trash\VocalJoystick\VocalJoystick.Input\obj\Debug\net8.0\VocalJoystick.Input.AssemblyInfoInputs.cache
 C:\work\trash\VocalJoystick\VocalJoystick.Input\obj\Debug\net8.0\VocalJoystick.Input.AssemblyInfo.cs
 C:\work\trash\VocalJoystick\VocalJoystick.Input\obj\Debug\net8.0\VocalJoystick.Input.csproj.CoreCompileInputs.cache
+C:\work\trash\VocalJoystick\VocalJoystick.Input\obj\Debug\net8.0\VocalJoystick.Input.sourcelink.json
 C:\work\trash\VocalJoystick\VocalJoystick.Input\obj\Debug\net8.0\VocalJoy.D4CC2903.Up2Date
 C:\work\trash\VocalJoystick\VocalJoystick.Input\obj\Debug\net8.0\VocalJoystick.Input.dll
 C:\work\trash\VocalJoystick\VocalJoystick.Input\obj\Debug\net8.0\refint\VocalJoystick.Input.dll
 C:\work\trash\VocalJoystick\VocalJoystick.Input\obj\Debug\net8.0\VocalJoystick.Input.pdb
 C:\work\trash\VocalJoystick\VocalJoystick.Input\obj\Debug\net8.0\ref\VocalJoystick.Input.dll
-C:\work\trash\VocalJoystick\VocalJoystick.Input\obj\Debug\net8.0\VocalJoystick.Input.sourcelink.json

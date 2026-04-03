@@ -1,6 +1,7 @@
 using System;
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -18,6 +19,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     private readonly IAudioCaptureService _audioCaptureService;
     private readonly IVoiceActivityDetector _voiceActivityDetector;
     private readonly IPitchDetector _pitchDetector;
+    private readonly ISampleRecorder _sampleRecorder;
     private readonly ILogger _logger;
     private readonly SynchronizationContext _uiContext;
 
@@ -38,6 +40,8 @@ public sealed class MainWindowViewModel : ViewModelBase
     private double? _currentPitch;
     private double _pitchConfidence;
     private string _pitchDisplay = "—";
+    private ProfileConfiguration? _profileConfiguration;
+    private readonly Dictionary<VocalAction, ActionSampleState> _actionStateMap;
 
     public MainWindowViewModel(
         IProfileRepository profileRepository,
@@ -45,6 +49,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         IAudioCaptureService audioCaptureService,
         IVoiceActivityDetector voiceActivityDetector,
         IPitchDetector pitchDetector,
+        ISampleRecorder sampleRecorder,
         ILogger logger)
     {
         _profileRepository = profileRepository;
@@ -52,6 +57,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         _audioCaptureService = audioCaptureService;
         _voiceActivityDetector = voiceActivityDetector;
         _pitchDetector = pitchDetector;
+        _sampleRecorder = sampleRecorder;
         _logger = logger;
         _uiContext = SynchronizationContext.Current ?? new SynchronizationContext();
         _selectedMicrophoneId = _audioCaptureService.SelectedDevice?.Id;
@@ -78,6 +84,18 @@ public sealed class MainWindowViewModel : ViewModelBase
         });
 
         SettingsCommand = new DelegateCommand(() => CurrentCommand = "Settings dialog placeholder");
+
+        _actionStateMap = Enum.GetValues<VocalAction>().ToDictionary(action => action, action => new ActionSampleState(action));
+        ActionSampleStates = new ObservableCollection<ActionSampleState>(_actionStateMap.Values);
+        StartRecordingCommand = new DelegateCommand<VocalAction?>(
+            action => FireAndForget(StartRecordingForAction(action)),
+            action => action.HasValue && !_actionStateMap[action.Value].IsRecording);
+        StopRecordingCommand = new DelegateCommand<VocalAction?>(
+            action => FireAndForget(StopRecordingForAction(action)),
+            action => action.HasValue && _actionStateMap[action.Value].IsRecording);
+        DeleteRecordingCommand = new DelegateCommand<VocalAction?>(
+            action => FireAndForget(DeleteRecordingsForAction(action)),
+            action => action.HasValue && !_actionStateMap[action.Value].IsRecording);
     }
 
     public ICommand ConfigurationModeCommand { get; }
@@ -114,6 +132,11 @@ public sealed class MainWindowViewModel : ViewModelBase
         get => _currentCommand;
         private set => SetProperty(ref _currentCommand, value);
     }
+
+    public ObservableCollection<ActionSampleState> ActionSampleStates { get; }
+    public DelegateCommand<VocalAction?> StartRecordingCommand { get; }
+    public DelegateCommand<VocalAction?> StopRecordingCommand { get; }
+    public DelegateCommand<VocalAction?> DeleteRecordingCommand { get; }
 
     public string CurrentProfileDisplay => _activeProfile?.DisplayName ?? "(no profile)";
 
@@ -243,7 +266,9 @@ public sealed class MainWindowViewModel : ViewModelBase
         CurrentSettings = CurrentSettings.WithMode(CurrentMode, _activeProfile?.Id);
         var profile = _activeProfile ?? throw new InvalidOperationException("Active profile must exist");
         var configuration = await _profileRepository.LoadOrCreateProfileConfigurationAsync(profile, cancellationToken).ConfigureAwait(true);
-        UpdateActionStatuses(configuration);
+        _profileConfiguration = configuration;
+        RefreshActionStatuses(configuration);
+        UpdateActionSampleStates();
 
         await SelectMicrophoneAsync(CurrentSettings.SelectedMicrophoneId, cancellationToken).ConfigureAwait(true);
         UpdateSignalLevel(0);
@@ -256,6 +281,86 @@ public sealed class MainWindowViewModel : ViewModelBase
         var percent = Math.Clamp(level, 0, 1) * 100;
         SignalLevelPercent = percent;
         SignalLevel = $"Signal Level: {(int)percent}%";
+    }
+
+    private async Task StartRecordingForAction(VocalAction? action)
+    {
+        if (action is null || _activeProfile is null)
+        {
+            return;
+        }
+
+        var state = _actionStateMap[action.Value];
+        if (state.IsRecording)
+        {
+            return;
+        }
+
+        state.IsRecording = true;
+        RefreshRecordingCommandStates();
+        await _sampleRecorder.StartRecordingAsync(_activeProfile.Id, action.Value, _frameSettings, CancellationToken.None);
+        _logger.LogInfo($"Started recording for {action.Value}");
+    }
+
+    private async Task StopRecordingForAction(VocalAction? action)
+    {
+        if (action is null || _activeProfile is null)
+        {
+            return;
+        }
+
+        var state = _actionStateMap[action.Value];
+        if (!state.IsRecording)
+        {
+            return;
+        }
+
+        var metadata = await _sampleRecorder.StopRecordingAsync(_activeProfile.Id, action.Value, CancellationToken.None);
+        state.IsRecording = false;
+        RefreshRecordingCommandStates();
+        if (metadata is not null)
+        {
+            var config = GetActionConfiguration(action.Value);
+            config.Samples.Add(metadata);
+            if (_profileConfiguration is not null)
+            {
+                await _profileRepository.SaveProfileConfigurationAsync(_profileConfiguration, CancellationToken.None).ConfigureAwait(true);
+            }
+            state.UpdateMetadata(config.Samples);
+            RefreshActionStatuses();
+        }
+        _logger.LogInfo($"Stopped recording for {action.Value}");
+    }
+
+    private async Task DeleteRecordingsForAction(VocalAction? action)
+    {
+        if (action is null || _activeProfile is null)
+        {
+            return;
+        }
+
+        var state = _actionStateMap[action.Value];
+        await _sampleRecorder.DeleteSamplesAsync(_activeProfile.Id, action.Value, CancellationToken.None);
+        var config = GetActionConfiguration(action.Value);
+        config.Samples.Clear();
+        if (_profileConfiguration is not null)
+        {
+            await _profileRepository.SaveProfileConfigurationAsync(_profileConfiguration, CancellationToken.None).ConfigureAwait(true);
+        }
+        state.UpdateMetadata(config.Samples);
+        RefreshActionStatuses();
+        _logger.LogInfo($"Deleted recordings for {action.Value}");
+        RefreshRecordingCommandStates();
+    }
+
+    private ActionConfiguration GetActionConfiguration(VocalAction action)
+    {
+        if (_profileConfiguration is null)
+        {
+            throw new InvalidOperationException("Profile configuration not loaded");
+        }
+
+        return _profileConfiguration.ActionConfigurations[action];
     }
 
     private void ApplyMode(AppMode mode, string micState, string commandState)
@@ -408,16 +513,47 @@ public sealed class MainWindowViewModel : ViewModelBase
         }, TaskScheduler.Current);
     }
 
-    private void UpdateActionStatuses(ProfileConfiguration configuration)
+    private void RefreshRecordingCommandStates()
+    {
+        StartRecordingCommand.RaiseCanExecuteChanged();
+        StopRecordingCommand.RaiseCanExecuteChanged();
+        DeleteRecordingCommand.RaiseCanExecuteChanged();
+    }
+
+    private void RefreshActionStatuses()
+    {
+        if (_profileConfiguration is null)
+        {
+            return;
+        }
+
+        RefreshActionStatuses(_profileConfiguration!);
+    }
+
+    private void RefreshActionStatuses(ProfileConfiguration configuration)
     {
         var statuses = configuration.ActionConfigurations.Values
             .Select(config => new ActionConfigurationStatus(
                 config.Action,
-                config.IsConfigured,
-                config.IsConfigured ? "Configured" : "Not configured"))
+                config.HasSamples,
+                config.HasSamples ? "Configured" : "Not configured"))
             .ToList();
 
         _actionStatuses = statuses;
         OnPropertyChanged(nameof(ActionStatuses));
+    }
+
+    private void UpdateActionSampleStates()
+    {
+        if (_profileConfiguration is null)
+        {
+            return;
+        }
+
+        foreach (var kvp in _actionStateMap)
+        {
+            var samples = _profileConfiguration.ActionConfigurations[kvp.Key].Samples;
+            kvp.Value.UpdateMetadata(samples);
+        }
     }
 }
