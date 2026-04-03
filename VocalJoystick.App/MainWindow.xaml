@@ -79,6 +79,8 @@
                 <TextBlock FontSize="18" FontWeight="Bold" Foreground="White" Text="Voice Activity" />
                 <TextBlock FontSize="14" Foreground="#FFCFE2FF" Text="VAD state: {Binding VadState}" />
                 <TextBlock FontSize="14" Foreground="#FFCFE2FF" Text="Last RMS: {Binding LatestRms, StringFormat=F4}" />
+                <TextBlock FontSize="14" Foreground="#FFCFE2FF" Text="Pitch: {Binding PitchDisplay}" />
+                <TextBlock FontSize="12" Foreground="#FF7C8CA9" Text="Pitch confidence: {Binding PitchConfidence, StringFormat=P2}" />
                 <TextBlock FontSize="14" Foreground="#FFCFE2FF" Text="Threshold" Margin="0 8 0 0" />
                 <Slider Minimum="0" Maximum="0.2" SmallChange="0.005" Value="{Binding VadThreshold, Mode=TwoWay}" />
                 <TextBlock FontSize="12" Foreground="#FF7C8CA9" Text="Frame Size" Margin="0 10 0 0" />

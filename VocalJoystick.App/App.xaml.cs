@@ -39,7 +39,7 @@ public partial class App : Application
         services.RegisterSingleton<ISettingsRepository>(sp => new JsonSettingsRepository(sp.GetRequiredService<IAppStorageLocation>()));
         services.RegisterSingleton<IAudioCaptureService>(_ => new NAudioCaptureService());
         services.RegisterSingleton<IVoiceActivityDetector>(_ => new EnergyVoiceActivityDetector());
-        services.RegisterSingleton<IPitchDetector>(_ => new StubPitchDetector());
+        services.RegisterSingleton<IPitchDetector>(_ => new AutocorrelationPitchDetector());
         services.RegisterSingleton<IFeatureExtractor>(_ => new StubFeatureExtractor());
         services.RegisterSingleton<ICommandRecognizer>(_ => new StubCommandRecognizer());
         services.RegisterSingleton<IMouseController>(_ => new StubMouseController());
@@ -49,6 +49,7 @@ public partial class App : Application
             sp.GetRequiredService<ISettingsRepository>(),
             sp.GetRequiredService<IAudioCaptureService>(),
             sp.GetRequiredService<IVoiceActivityDetector>(),
+            sp.GetRequiredService<IPitchDetector>(),
             sp.GetRequiredService<ILogger>()));
 
         services.RegisterSingleton<MainWindow>(sp => new MainWindow(sp.GetRequiredService<MainWindowViewModel>()));

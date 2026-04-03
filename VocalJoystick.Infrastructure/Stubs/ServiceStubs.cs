@@ -74,9 +74,9 @@ public sealed class StubVoiceActivityDetector : IVoiceActivityDetector
 
 public sealed class StubPitchDetector : IPitchDetector
 {
-    public Task<double?> DetectPitchAsync(AudioBuffer buffer, CancellationToken cancellationToken)
+    public Task<PitchDetectionResult> DetectPitchAsync(Frame frame, CancellationToken cancellationToken)
     {
-        return Task.FromResult<double?>(418.0);
+        return Task.FromResult(PitchDetectionResult.Unvoiced);
     }
 }
 

@@ -1,4 +1,5 @@
 using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -16,6 +17,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     private readonly ISettingsRepository _settingsRepository;
     private readonly IAudioCaptureService _audioCaptureService;
     private readonly IVoiceActivityDetector _voiceActivityDetector;
+    private readonly IPitchDetector _pitchDetector;
     private readonly ILogger _logger;
     private readonly SynchronizationContext _uiContext;
 
@@ -33,18 +35,23 @@ public sealed class MainWindowViewModel : ViewModelBase
     private double _latestRms;
     private bool _vadActive;
     private string _vadState = "Inactive";
+    private double? _currentPitch;
+    private double _pitchConfidence;
+    private string _pitchDisplay = "—";
 
     public MainWindowViewModel(
         IProfileRepository profileRepository,
         ISettingsRepository settingsRepository,
         IAudioCaptureService audioCaptureService,
         IVoiceActivityDetector voiceActivityDetector,
+        IPitchDetector pitchDetector,
         ILogger logger)
     {
         _profileRepository = profileRepository;
         _settingsRepository = settingsRepository;
         _audioCaptureService = audioCaptureService;
         _voiceActivityDetector = voiceActivityDetector;
+        _pitchDetector = pitchDetector;
         _logger = logger;
         _uiContext = SynchronizationContext.Current ?? new SynchronizationContext();
         _selectedMicrophoneId = _audioCaptureService.SelectedDevice?.Id;
@@ -144,6 +151,30 @@ public sealed class MainWindowViewModel : ViewModelBase
     {
         get => _vadState;
         private set => SetProperty(ref _vadState, value);
+    }
+
+    public double? CurrentPitch
+    {
+        get => _currentPitch;
+        private set
+        {
+            if (SetProperty(ref _currentPitch, value))
+            {
+                PitchDisplay = value.HasValue ? $"{value.Value:F1} Hz" : "—";
+            }
+        }
+    }
+
+    public double PitchConfidence
+    {
+        get => _pitchConfidence;
+        private set => SetProperty(ref _pitchConfidence, value);
+    }
+
+    public string PitchDisplay
+    {
+        get => _pitchDisplay;
+        private set => SetProperty(ref _pitchDisplay, value);
     }
 
     public double VadThreshold
@@ -337,6 +368,33 @@ public sealed class MainWindowViewModel : ViewModelBase
             VadState = result.IsActive ? "Active" : "Inactive";
             UpdateSignalLevel(result.Rms);
         }, null);
+
+        FireAndForget(PredictPitchAsync(lastFrame));
+    }
+
+    private async Task PredictPitchAsync(Frame frame)
+    {
+        try
+        {
+            var result = await _pitchDetector.DetectPitchAsync(frame, CancellationToken.None).ConfigureAwait(true);
+            _uiContext.Post(_ =>
+            {
+                if (result.IsVoiced)
+                {
+                    CurrentPitch = result.PitchHz;
+                    PitchConfidence = result.Confidence;
+                }
+                else
+                {
+                    CurrentPitch = null;
+                    PitchConfidence = 0;
+                }
+            }, null);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Pitch detection failed", ex);
+        }
     }
 
     private void FireAndForget(Task task)
