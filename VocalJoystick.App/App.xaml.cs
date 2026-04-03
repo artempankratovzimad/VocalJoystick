@@ -42,6 +42,7 @@ public partial class App : Application
         services.RegisterSingleton<IVoiceActivityDetector>(_ => new EnergyVoiceActivityDetector());
         services.RegisterSingleton<IPitchDetector>(_ => new AutocorrelationPitchDetector());
         services.RegisterSingleton<IFeatureExtractor>(sp => new FeatureExtractor(sp.GetRequiredService<IPitchDetector>(), sp.GetRequiredService<IVoiceActivityDetector>()));
+        services.RegisterSingleton<IShortClickRecognitionEngine>(sp => new ShortClickRecognitionEngine(sp.GetRequiredService<IFeatureExtractor>()));
         services.RegisterSingleton<ISampleRecorder>(sp => new SampleRecorder(
             sp.GetRequiredService<IAudioCaptureService>(),
             sp.GetRequiredService<IAppStorageLocation>(),
@@ -57,6 +58,7 @@ public partial class App : Application
             sp.GetRequiredService<IVoiceActivityDetector>(),
             sp.GetRequiredService<IPitchDetector>(),
             sp.GetRequiredService<ISampleRecorder>(),
+            sp.GetRequiredService<IShortClickRecognitionEngine>(),
             sp.GetRequiredService<ILogger>()));
 
         services.RegisterSingleton<MainWindow>(sp => new MainWindow(sp.GetRequiredService<MainWindowViewModel>()));

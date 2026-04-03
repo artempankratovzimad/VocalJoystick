@@ -25,6 +25,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -143,7 +144,19 @@
             </StackPanel>
         </Border>
 
-        <Border Grid.Row="8" Background="#FF1F2A43" CornerRadius="12" Padding="16">
+        <Border Grid.Row="8" Background="#FF1F2A43" CornerRadius="12" Padding="16" Margin="0 0 0 16">
+            <StackPanel>
+                <TextBlock FontSize="18" FontWeight="Bold" Foreground="White" Text="Click Recognition" />
+                <TextBlock FontSize="14" Foreground="#FFCFE2FF" Text="{Binding ClickRecognitionStatus}" />
+                <TextBlock FontSize="12" Foreground="#FF7C8CA9" Text="Confidence: {Binding ClickRecognitionConfidence, StringFormat=P0}" />
+                <TextBlock FontSize="12" Foreground="#FF7C8CA9" Text="Threshold" Margin="0 8 0 0" />
+                <Slider Minimum="0" Maximum="1" SmallChange="0.05" Value="{Binding ClickConfidenceThreshold, Mode=TwoWay}" />
+                <TextBlock FontSize="12" Foreground="#FF7C8CA9" Text="Cooldown (ms)" Margin="0 10 0 0" />
+                <TextBox Text="{Binding ClickCooldownMs, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="120" Background="#FF0F1528" Foreground="White" BorderBrush="#FF4260B5" />
+            </StackPanel>
+        </Border>
+
+        <Border Grid.Row="9" Background="#FF1F2A43" CornerRadius="12" Padding="16">
             <StackPanel>
                 <TextBlock FontSize="18" FontWeight="Bold" Foreground="White" Text="Current Command" />
                 <TextBlock FontSize="16" Foreground="#FF8AB4F8" Text="{Binding CurrentCommand}" />

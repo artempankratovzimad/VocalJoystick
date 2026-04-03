@@ -42,6 +42,9 @@ public sealed class MainWindowViewModel : ViewModelBase
     private string _pitchDisplay = "—";
     private ProfileConfiguration? _profileConfiguration;
     private readonly Dictionary<VocalAction, ActionSampleState> _actionStateMap;
+    private readonly IShortClickRecognitionEngine _clickRecognitionEngine;
+    private string _clickRecognitionStatus = "Awaiting click events";
+    private double _clickRecognitionConfidence;
 
     public MainWindowViewModel(
         IProfileRepository profileRepository,
@@ -50,6 +53,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         IVoiceActivityDetector voiceActivityDetector,
         IPitchDetector pitchDetector,
         ISampleRecorder sampleRecorder,
+        IShortClickRecognitionEngine clickRecognitionEngine,
         ILogger logger)
     {
         _profileRepository = profileRepository;
@@ -58,6 +62,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         _voiceActivityDetector = voiceActivityDetector;
         _pitchDetector = pitchDetector;
         _sampleRecorder = sampleRecorder;
+        _clickRecognitionEngine = clickRecognitionEngine;
         _logger = logger;
         _uiContext = SynchronizationContext.Current ?? new SynchronizationContext();
         _selectedMicrophoneId = _audioCaptureService.SelectedDevice?.Id;
@@ -141,6 +146,30 @@ public sealed class MainWindowViewModel : ViewModelBase
     public string CurrentProfileDisplay => _activeProfile?.DisplayName ?? "(no profile)";
 
     public IReadOnlyList<ActionConfigurationStatus> ActionStatuses => _actionStatuses;
+
+    public string ClickRecognitionStatus
+    {
+        get => _clickRecognitionStatus;
+        private set => SetProperty(ref _clickRecognitionStatus, value);
+    }
+
+    public double ClickRecognitionConfidence
+    {
+        get => _clickRecognitionConfidence;
+        private set => SetProperty(ref _clickRecognitionConfidence, value);
+    }
+
+    public double ClickConfidenceThreshold
+    {
+        get => CurrentSettings.ClickConfidenceThreshold;
+        set => UpdateClickConfidenceThreshold(value);
+    }
+
+    public int ClickCooldownMs
+    {
+        get => CurrentSettings.ClickCooldownMs;
+        set => UpdateClickCooldownMs(value);
+    }
 
     public IReadOnlyList<AudioDeviceInfo> AvailableMicrophones => _audioCaptureService.AvailableDevices;
 
@@ -269,6 +298,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         _profileConfiguration = configuration;
         RefreshActionStatuses(configuration);
         UpdateActionSampleStates();
+        _clickRecognitionEngine.Reset();
 
         await SelectMicrophoneAsync(CurrentSettings.SelectedMicrophoneId, cancellationToken).ConfigureAwait(true);
         UpdateSignalLevel(0);
@@ -458,6 +488,30 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
     }
 
+    private void UpdateClickConfidenceThreshold(double threshold)
+    {
+        if (Math.Abs(CurrentSettings.ClickConfidenceThreshold - threshold) < 1e-6)
+        {
+            return;
+        }
+
+        CurrentSettings = CurrentSettings.WithClickConfidenceThreshold(threshold);
+        OnPropertyChanged(nameof(ClickConfidenceThreshold));
+        _ = _settingsRepository.SaveSettingsAsync(CurrentSettings, CancellationToken.None);
+    }
+
+    private void UpdateClickCooldownMs(int cooldownMs)
+    {
+        if (CurrentSettings.ClickCooldownMs == cooldownMs)
+        {
+            return;
+        }
+
+        CurrentSettings = CurrentSettings.WithClickCooldownMs(cooldownMs);
+        OnPropertyChanged(nameof(ClickCooldownMs));
+        _ = _settingsRepository.SaveSettingsAsync(CurrentSettings, CancellationToken.None);
+    }
+
     private void OnBufferCaptured(object? sender, AudioBufferEventArgs args)
     {
         var frames = FrameSegmenter.Segment(args.Buffer.Samples, _frameSettings, args.Buffer.SampleRate).ToList();
@@ -477,6 +531,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         }, null);
 
         FireAndForget(PredictPitchAsync(lastFrame));
+        FireAndForget(RecognizeShortClicksAsync(args.Buffer));
     }
 
     private async Task PredictPitchAsync(Frame frame)
@@ -502,6 +557,52 @@ public sealed class MainWindowViewModel : ViewModelBase
         {
             _logger.LogError("Pitch detection failed", ex);
         }
+    }
+
+    private async Task RecognizeShortClicksAsync(AudioBuffer buffer)
+    {
+        if (_profileConfiguration is null)
+        {
+            return;
+        }
+
+        var templates = BuildClickTemplates();
+        if (templates.Count == 0)
+        {
+            return;
+        }
+
+        var cooldown = TimeSpan.FromMilliseconds(ClickCooldownMs);
+        var result = await _clickRecognitionEngine.ProcessBufferAsync(buffer, templates, ClickConfidenceThreshold, cooldown, CancellationToken.None).ConfigureAwait(false);
+        if (result is null)
+        {
+            return;
+        }
+
+        _uiContext.Post(_ =>
+        {
+            ClickRecognitionStatus = $"{result.Action} detected";
+            ClickRecognitionConfidence = result.Confidence;
+        }, null);
+    }
+
+    private IReadOnlyDictionary<VocalAction, ActionTemplate> BuildClickTemplates()
+    {
+        if (_profileConfiguration is null)
+        {
+            return new Dictionary<VocalAction, ActionTemplate>();
+        }
+
+        var lookup = new Dictionary<VocalAction, ActionTemplate>();
+        foreach (var action in new[] { VocalAction.LeftClick, VocalAction.RightClick, VocalAction.DoubleClick })
+        {
+            if (_profileConfiguration.ActionConfigurations.TryGetValue(action, out var config) && config.Template.SampleCount > 0)
+            {
+                lookup[action] = config.Template;
+            }
+        }
+
+        return lookup;
     }
 
     private void FireAndForget(Task task)
