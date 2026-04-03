@@ -43,8 +43,14 @@ public sealed class MainWindowViewModel : ViewModelBase
     private ProfileConfiguration? _profileConfiguration;
     private readonly Dictionary<VocalAction, ActionSampleState> _actionStateMap;
     private readonly IShortClickRecognitionEngine _clickRecognitionEngine;
+    private readonly ICommandRecognizer _commandRecognizer;
     private string _clickRecognitionStatus = "Awaiting click events";
     private double _clickRecognitionConfidence;
+    private VocalAction? _recognizedDirection;
+    private double _directionRecognitionConfidence;
+    private DirectionalRecognitionDebugState _directionRecognitionDebug = DirectionalRecognitionDebugState.Idle;
+    private static readonly VocalAction[] DirectionalActions =
+        { VocalAction.MoveUp, VocalAction.MoveDown, VocalAction.MoveLeft, VocalAction.MoveRight };
 
     public MainWindowViewModel(
         IProfileRepository profileRepository,
@@ -54,6 +60,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         IPitchDetector pitchDetector,
         ISampleRecorder sampleRecorder,
         IShortClickRecognitionEngine clickRecognitionEngine,
+        ICommandRecognizer commandRecognizer,
         ILogger logger)
     {
         _profileRepository = profileRepository;
@@ -63,6 +70,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         _pitchDetector = pitchDetector;
         _sampleRecorder = sampleRecorder;
         _clickRecognitionEngine = clickRecognitionEngine;
+        _commandRecognizer = commandRecognizer;
         _logger = logger;
         _uiContext = SynchronizationContext.Current ?? new SynchronizationContext();
         _selectedMicrophoneId = _audioCaptureService.SelectedDevice?.Id;
@@ -158,6 +166,32 @@ public sealed class MainWindowViewModel : ViewModelBase
         get => _clickRecognitionConfidence;
         private set => SetProperty(ref _clickRecognitionConfidence, value);
     }
+
+    public VocalAction? RecognizedDirection
+    {
+        get => _recognizedDirection;
+        private set => SetProperty(ref _recognizedDirection, value);
+    }
+
+    public double DirectionRecognitionConfidence
+    {
+        get => _directionRecognitionConfidence;
+        private set => SetProperty(ref _directionRecognitionConfidence, value);
+    }
+
+    public DirectionalRecognitionDebugState DirectionRecognitionDebug
+    {
+        get => _directionRecognitionDebug;
+        private set
+        {
+            if (SetProperty(ref _directionRecognitionDebug, value))
+            {
+                OnPropertyChanged(nameof(DirectionRecognitionStatus));
+            }
+        }
+    }
+
+    public string DirectionRecognitionStatus => DirectionRecognitionDebug.Status;
 
     public double ClickConfidenceThreshold
     {
@@ -530,11 +564,11 @@ public sealed class MainWindowViewModel : ViewModelBase
             UpdateSignalLevel(result.Rms);
         }, null);
 
-        FireAndForget(PredictPitchAsync(lastFrame));
+        FireAndForget(PredictPitchAsync(lastFrame, result, args.Buffer.Timestamp));
         FireAndForget(RecognizeShortClicksAsync(args.Buffer));
     }
 
-    private async Task PredictPitchAsync(Frame frame)
+    private async Task PredictPitchAsync(Frame frame, VoiceActivityResult voiceActivity, DateTimeOffset bufferTimestamp)
     {
         try
         {
@@ -552,6 +586,10 @@ public sealed class MainWindowViewModel : ViewModelBase
                     PitchConfidence = 0;
                 }
             }, null);
+
+            var recognitionInput = new DirectionalRecognitionInput(voiceActivity, result, bufferTimestamp);
+            var recognitionResult = _commandRecognizer.Recognize(recognitionInput);
+            _uiContext.Post(_ => UpdateDirectionRecognitionState(recognitionResult), null);
         }
         catch (Exception ex)
         {
@@ -605,6 +643,25 @@ public sealed class MainWindowViewModel : ViewModelBase
         return lookup;
     }
 
+    private void UpdateDirectionalTemplates(ProfileConfiguration configuration)
+    {
+        _commandRecognizer.UpdateTemplates(BuildDirectionalTemplates(configuration));
+    }
+
+    private static IReadOnlyDictionary<VocalAction, ActionTemplate> BuildDirectionalTemplates(ProfileConfiguration configuration)
+    {
+        var lookup = new Dictionary<VocalAction, ActionTemplate>();
+        foreach (var action in DirectionalActions)
+        {
+            if (configuration.ActionConfigurations.TryGetValue(action, out var config) && config.Template.SampleCount > 0)
+            {
+                lookup[action] = config.Template;
+            }
+        }
+
+        return lookup;
+    }
+
     private void FireAndForget(Task task)
     {
         task.ContinueWith(t =>
@@ -649,6 +706,7 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         _actionStatuses = statuses;
         OnPropertyChanged(nameof(ActionStatuses));
+        UpdateDirectionalTemplates(configuration);
     }
 
     private void UpdateActionSampleStates()
@@ -663,5 +721,12 @@ public sealed class MainWindowViewModel : ViewModelBase
             var configuration = _profileConfiguration.ActionConfigurations[kvp.Key];
             kvp.Value.UpdateMetadata(configuration.Samples, configuration.Template);
         }
+    }
+
+    private void UpdateDirectionRecognitionState(DirectionalRecognitionResult result)
+    {
+        RecognizedDirection = result.ActiveDirection;
+        DirectionRecognitionConfidence = result.Confidence;
+        DirectionRecognitionDebug = result.Debug;
     }
 }

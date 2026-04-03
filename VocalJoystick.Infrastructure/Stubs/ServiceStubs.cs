@@ -93,24 +93,6 @@ public sealed class StubFeatureExtractor : IFeatureExtractor
     }
 }
 
-public sealed class StubCommandRecognizer : ICommandRecognizer
-{
-    public Task<RecognitionResult?> RecognizeAsync(float[] features, CancellationToken cancellationToken)
-    {
-        if (features.Length == 0)
-        {
-            return Task.FromResult<RecognitionResult?>(null);
-        }
-
-        return Task.FromResult<RecognitionResult?>(new RecognitionResult
-        {
-            Action = VocalAction.MoveRight,
-            Confidence = 0.42,
-            Description = "Stub command recognizes MoveRight"
-        });
-    }
-}
-
 public sealed class StubMouseController : IMouseController
 {
     public Task ClickAsync(VocalAction action, CancellationToken cancellationToken) => Task.CompletedTask;
