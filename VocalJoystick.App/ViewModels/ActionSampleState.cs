@@ -62,22 +62,30 @@ public sealed class ActionSampleState : ViewModelBase
         private set => SetProperty(ref _featureSummary, value);
     }
 
-    public void UpdateMetadata(IReadOnlyList<SampleMetadata> samples, ActionTemplate template)
-    {
-        SampleCount = samples.Count;
-        if (samples.Count == 0)
+        public void UpdateMetadata(IReadOnlyList<SampleMetadata> samples, ActionTemplate template, DirectionalTemplate? directionalTemplate)
         {
-            StatusText = "No sample";
-            DurationText = "Duration: 0s";
-            FeatureSummary = "Template pending";
-            return;
-        }
+            SampleCount = samples.Count;
+            if (samples.Count == 0)
+            {
+                StatusText = "No sample";
+                DurationText = "Duration: 0s";
+                FeatureSummary = "Template pending";
+                return;
+            }
 
-        var last = samples[^1];
-        StatusText = $"Last: {last.RecordedAt:HH:mm:ss}";
-        DurationText = $"Duration: {last.DurationSeconds:F2}s";
-        FeatureSummary = template.SampleCount == 0
-            ? "Awaiting feature summary"
-            : $"Avg RMS {template.AverageRms:F2}, Pitch {template.AveragePitchHz:F0}Hz, Voiced {template.VoicedRatio:P0}";
-    }
+            var last = samples[^1];
+            StatusText = $"Last: {last.RecordedAt:HH:mm:ss}";
+            DurationText = $"Duration: {last.DurationSeconds:F2}s";
+            if (template.SampleCount == 0)
+            {
+                FeatureSummary = "Awaiting feature summary";
+                return;
+            }
+
+            FeatureSummary = $"Avg RMS {template.AverageRms:F2}, Pitch {template.AveragePitchHz:F0}Hz, Voiced {template.VoicedRatio:P0}, Spectral {template.AverageSpectralCentroid:F0}/{template.AverageSpectralRolloff:F0}";
+            if (directionalTemplate is not null)
+            {
+                FeatureSummary += $", Vowel F1 {directionalTemplate.Prototype.Formants.FirstFormantHz:F0}Hz, F2 {directionalTemplate.Prototype.Formants.SecondFormantHz:F0}Hz";
+            }
+        }
 }

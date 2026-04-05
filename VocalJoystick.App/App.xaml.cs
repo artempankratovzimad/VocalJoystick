@@ -11,6 +11,7 @@ using VocalJoystick.Infrastructure.Recording;
 using VocalJoystick.Infrastructure.Recognition;
 using VocalJoystick.Input;
 using VocalJoystick.Recognition;
+using VocalJoystick.Recognition.Directional;
 using VocalJoystick.Recognition.FeatureExtraction;
 
 namespace VocalJoystick.App;
@@ -52,13 +53,18 @@ public partial class App : Application
             sp.GetRequiredService<IFormantExtractor>(),
             sp.GetRequiredService<IMfccExtractor>()));
         services.RegisterSingleton<IDirectionalTrainingService>(_ => new DirectionalTrainingService());
+        services.RegisterSingleton<IDirectionalClassifier>(_ => new VowelDirectionalClassifier(new DirectionalRecognitionSettings()));
+        services.RegisterSingleton<IDirectionalVowelRecognizer>(sp => new VowelDirectionalRecognizer(
+            sp.GetRequiredService<IDirectionalClassifier>(),
+            sp.GetRequiredService<IDirectionalTrainingService>(),
+            sp.GetRequiredService<ILogger>(),
+            new DirectionalRecognitionSettings()));
         services.RegisterSingleton<IShortClickRecognitionEngine>(sp => new ShortClickRecognitionEngine(sp.GetRequiredService<IFeatureExtractor>()));
         services.RegisterSingleton<ISampleRecorder>(sp => new SampleRecorder(
             sp.GetRequiredService<IAudioCaptureService>(),
             sp.GetRequiredService<IAppStorageLocation>(),
             sp.GetRequiredService<ILogger>(),
             sp.GetRequiredService<IFeatureExtractor>()));
-        services.RegisterSingleton<ICommandRecognizer>(_ => new DirectionalCommandRecognizer(new DirectionalRecognitionSettings()));
         services.RegisterSingleton<IMouseController>(sp => new Win32MouseController(sp.GetRequiredService<ILogger>()));
 
         services.RegisterSingleton<MainWindowViewModel>(sp => new MainWindowViewModel(
@@ -69,8 +75,9 @@ public partial class App : Application
             sp.GetRequiredService<IPitchDetector>(),
             sp.GetRequiredService<ISampleRecorder>(),
             sp.GetRequiredService<IShortClickRecognitionEngine>(),
-            sp.GetRequiredService<ICommandRecognizer>(),
+            sp.GetRequiredService<IDirectionalVowelRecognizer>(),
             sp.GetRequiredService<IMouseController>(),
+            sp.GetRequiredService<IFeatureExtractor>(),
             sp.GetRequiredService<IDirectionalTrainingService>(),
             sp.GetRequiredService<ILogger>()));
 

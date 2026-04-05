@@ -43,8 +43,9 @@ public sealed class MainWindowViewModel : ViewModelBase
     private ProfileConfiguration? _profileConfiguration;
     private readonly Dictionary<VocalAction, ActionSampleState> _actionStateMap;
     private readonly IShortClickRecognitionEngine _clickRecognitionEngine;
-    private readonly ICommandRecognizer _commandRecognizer;
+    private readonly IDirectionalVowelRecognizer _directionalRecognizer;
     private readonly IMouseController _mouseController;
+    private readonly IFeatureExtractor _featureExtractor;
     private readonly DelegateCommand _configurationModeCommand;
     private readonly DelegateCommand _workingModeCommand;
     private readonly DelegateCommand _stopCommand;
@@ -71,8 +72,9 @@ public sealed class MainWindowViewModel : ViewModelBase
         IPitchDetector pitchDetector,
         ISampleRecorder sampleRecorder,
         IShortClickRecognitionEngine clickRecognitionEngine,
-        ICommandRecognizer commandRecognizer,
+        IDirectionalVowelRecognizer directionalRecognizer,
         IMouseController mouseController,
+        IFeatureExtractor featureExtractor,
         IDirectionalTrainingService trainingService,
         ILogger logger)
     {
@@ -83,8 +85,9 @@ public sealed class MainWindowViewModel : ViewModelBase
         _pitchDetector = pitchDetector;
         _sampleRecorder = sampleRecorder;
         _clickRecognitionEngine = clickRecognitionEngine;
-        _commandRecognizer = commandRecognizer;
+        _directionalRecognizer = directionalRecognizer;
         _mouseController = mouseController;
+        _featureExtractor = featureExtractor;
         _trainingService = trainingService;
         _logger = logger;
         _uiContext = SynchronizationContext.Current ?? new SynchronizationContext();
@@ -450,7 +453,7 @@ public sealed class MainWindowViewModel : ViewModelBase
                     {
                         await _profileRepository.SaveProfileConfigurationAsync(_profileConfiguration, CancellationToken.None).ConfigureAwait(true);
                     }
-                    state.UpdateMetadata(config.Samples, config.Template);
+                    state.UpdateMetadata(config.Samples, config.Template, config.DirectionalTemplate);
                     RefreshActionStatuses();
                 }
         _logger.LogInfo($"Stopped recording for {action.Value}");
@@ -472,7 +475,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         {
             await _profileRepository.SaveProfileConfigurationAsync(_profileConfiguration, CancellationToken.None).ConfigureAwait(true);
         }
-        state.UpdateMetadata(config.Samples, config.Template);
+        state.UpdateMetadata(config.Samples, config.Template, config.DirectionalTemplate);
         RefreshActionStatuses();
         _logger.LogInfo($"Deleted recordings for {action.Value}");
         RefreshRecordingCommandStates();
@@ -709,10 +712,9 @@ public sealed class MainWindowViewModel : ViewModelBase
             VADActive = result.IsActive;
             VadState = result.IsActive ? "Active" : "Inactive";
             UpdateSignalLevel(result.Rms);
-            BufferDebugInfo = FormatBufferDebug(result, frames.Count, args.Buffer);
         }, null);
 
-        FireAndForget(PredictPitchAsync(lastFrame, result, args.Buffer.Timestamp));
+        FireAndForget(ProcessDirectionRecognitionAsync(args.Buffer, lastFrame, result, frames.Count));
         FireAndForget(RecognizeShortClicksAsync(args.Buffer));
     }
 
@@ -725,32 +727,36 @@ public sealed class MainWindowViewModel : ViewModelBase
     private static string FormatEmptyBufferDebug(AudioBuffer buffer)
         => $"Buffer {buffer.Samples.Length} samples @ {buffer.SampleRate}Hz · no frames extracted · {buffer.Timestamp:HH:mm:ss.fff}";
 
-    private async Task PredictPitchAsync(Frame frame, VoiceActivityResult voiceActivity, DateTimeOffset bufferTimestamp)
+    private async Task ProcessDirectionRecognitionAsync(AudioBuffer buffer, Frame frame, VoiceActivityResult voiceActivity, int frameCount)
     {
         try
         {
-            var result = await _pitchDetector.DetectPitchAsync(frame, CancellationToken.None).ConfigureAwait(true);
+            var pitchResult = await _pitchDetector.DetectPitchAsync(frame, CancellationToken.None).ConfigureAwait(true);
             _uiContext.Post(_ =>
             {
-                if (result.IsVoiced)
+                if (pitchResult.IsVoiced)
                 {
-                    CurrentPitch = result.PitchHz;
-                    PitchConfidence = result.Confidence;
+                    CurrentPitch = pitchResult.PitchHz;
                 }
                 else
                 {
                     CurrentPitch = null;
-                    PitchConfidence = 0;
                 }
+
+                PitchConfidence = pitchResult.Confidence;
             }, null);
 
-            var recognitionInput = new DirectionalRecognitionInput(voiceActivity, result, bufferTimestamp);
-            var recognitionResult = _commandRecognizer.Recognize(recognitionInput);
-            _uiContext.Post(_ => UpdateDirectionRecognitionState(recognitionResult), null);
+            var extraction = await _featureExtractor.ExtractFeaturesAsync(buffer, CancellationToken.None).ConfigureAwait(true);
+            BufferDebugInfo = FormatBufferDebug(voiceActivity, frameCount, buffer);
+            if (CurrentMode == AppMode.Working && extraction.DirectionalFeature is not null)
+            {
+                var recognitionResult = _directionalRecognizer.Recognize(voiceActivity, pitchResult, extraction.DirectionalFeature, buffer.Timestamp);
+                _uiContext.Post(_ => UpdateDirectionRecognitionState(recognitionResult), null);
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogError("Pitch detection failed", ex);
+            _logger.LogError("Recognition buffer failed", ex);
         }
     }
 
@@ -804,7 +810,7 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     private void UpdateDirectionalTemplates(ProfileConfiguration configuration)
     {
-        _commandRecognizer.UpdateTemplates(BuildDirectionalTemplates(configuration));
+        _directionalRecognizer.UpdateTemplates(_trainingService.GetTemplates());
     }
 
     private static IReadOnlyDictionary<VocalAction, ActionTemplate> BuildDirectionalTemplates(ProfileConfiguration configuration)
@@ -891,7 +897,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         foreach (var kvp in _actionStateMap)
         {
             var configuration = _profileConfiguration.ActionConfigurations[kvp.Key];
-            kvp.Value.UpdateMetadata(configuration.Samples, configuration.Template);
+                kvp.Value.UpdateMetadata(configuration.Samples, configuration.Template, configuration.DirectionalTemplate);
         }
     }
 
@@ -990,7 +996,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         RefreshActionStatuses(configuration);
         UpdateActionSampleStates();
         WarmUpTrainingTemplates(configuration);
-        _commandRecognizer.UpdateTemplates(BuildDirectionalTemplates(configuration));
+        _directionalRecognizer.UpdateTemplates(_trainingService.GetTemplates());
         OnPropertyChanged(nameof(CurrentProfileDisplay));
     }
 
