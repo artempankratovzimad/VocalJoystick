@@ -48,6 +48,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     private readonly DelegateCommand _configurationModeCommand;
     private readonly DelegateCommand _workingModeCommand;
     private readonly DelegateCommand _stopCommand;
+    private readonly IDirectionalTrainingService _trainingService;
     private string _clickRecognitionStatus = "Awaiting click events";
     private double _clickRecognitionConfidence;
     private VocalAction? _recognizedDirection;
@@ -59,6 +60,8 @@ public sealed class MainWindowViewModel : ViewModelBase
         { VocalAction.MoveUp, VocalAction.MoveDown, VocalAction.MoveLeft, VocalAction.MoveRight };
     private string _statusMessage = "Select a mode to begin.";
     private string _statusSeverity = "Info";
+    private string _bufferDebugInfo = "Waiting for microphone buffer...";
+    private string _trainingDebugInfo = string.Empty;
 
     public MainWindowViewModel(
         IProfileRepository profileRepository,
@@ -70,6 +73,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         IShortClickRecognitionEngine clickRecognitionEngine,
         ICommandRecognizer commandRecognizer,
         IMouseController mouseController,
+        IDirectionalTrainingService trainingService,
         ILogger logger)
     {
         _profileRepository = profileRepository;
@@ -81,6 +85,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         _clickRecognitionEngine = clickRecognitionEngine;
         _commandRecognizer = commandRecognizer;
         _mouseController = mouseController;
+        _trainingService = trainingService;
         _logger = logger;
         _uiContext = SynchronizationContext.Current ?? new SynchronizationContext();
         _selectedMicrophoneId = _audioCaptureService.SelectedDevice?.Id;
@@ -171,6 +176,18 @@ public sealed class MainWindowViewModel : ViewModelBase
         private set => SetProperty(ref _statusSeverity, value);
     }
 
+    public string BufferDebugInfo
+    {
+        get => _bufferDebugInfo;
+        private set => SetProperty(ref _bufferDebugInfo, value);
+    }
+
+    public string TrainingDebugInfo
+    {
+        get => _trainingDebugInfo;
+        private set => SetProperty(ref _trainingDebugInfo, value);
+    }
+
     public string ClickRecognitionStatus
     {
         get => _clickRecognitionStatus;
@@ -192,7 +209,13 @@ public sealed class MainWindowViewModel : ViewModelBase
     public double DirectionRecognitionConfidence
     {
         get => _directionRecognitionConfidence;
-        private set => SetProperty(ref _directionRecognitionConfidence, value);
+        private set
+        {
+            if (SetProperty(ref _directionRecognitionConfidence, value))
+            {
+                OnPropertyChanged(nameof(DirectionConfidenceDisplay));
+            }
+        }
     }
 
     public DirectionalRecognitionDebugState DirectionRecognitionDebug
@@ -202,12 +225,32 @@ public sealed class MainWindowViewModel : ViewModelBase
         {
             if (SetProperty(ref _directionRecognitionDebug, value))
             {
-                OnPropertyChanged(nameof(DirectionRecognitionStatus));
+                OnDirectionDebugChanged();
             }
         }
     }
 
     public string DirectionRecognitionStatus => DirectionRecognitionDebug.Status;
+
+    public string DirectionConfidenceDisplay => DirectionRecognitionConfidence > 0
+        ? $"{DirectionRecognitionConfidence:P0}"
+        : "—";
+
+    public string DirectionHoldDisplay => DirectionRecognitionDebug.HoldSeconds > 0
+        ? $"{DirectionRecognitionDebug.HoldSeconds:F2}s / {DirectionRecognitionDebug.ActivationHoldSeconds:F2}s"
+        : $"0.00s / {DirectionRecognitionDebug.ActivationHoldSeconds:F2}s";
+
+    public string DirectionVoiceDisplay => DirectionRecognitionDebug.VoiceActive ? "Voice active" : "Voice inactive";
+
+    public string DirectionPitchDisplay => DirectionRecognitionDebug.PitchHz.HasValue
+        ? $"{DirectionRecognitionDebug.PitchHz.Value:F1} Hz ({DirectionRecognitionDebug.PitchConfidence:P0})"
+        : "—";
+
+    public string DirectionRmsDisplay => $"{DirectionRecognitionDebug.Rms:F3}";
+
+    public string DirectionTemplateStatus => DirectionRecognitionDebug.HasTemplates ? "Directional templates loaded" : "Waiting for templates";
+
+    public string DirectionCandidateDisplay => DirectionRecognitionDebug.CandidateDirection?.ToString() ?? "—";
 
     public double ClickConfidenceThreshold
     {
@@ -337,6 +380,10 @@ public sealed class MainWindowViewModel : ViewModelBase
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
         var settings = await _settingsRepository.LoadSettingsAsync(cancellationToken).ConfigureAwait(true);
+        if (settings.FrameSettings is null)
+        {
+            settings = settings.WithFrameSettings(FrameProcessingSettings.CreateDefault());
+        }
         CurrentSettings = settings;
         _frameSettings = settings.FrameSettings;
 
@@ -393,18 +440,19 @@ public sealed class MainWindowViewModel : ViewModelBase
         var metadata = await _sampleRecorder.StopRecordingAsync(_activeProfile.Id, action.Value, CancellationToken.None);
         state.IsRecording = false;
         RefreshRecordingCommandStates();
-            if (metadata is not null)
-            {
-                var config = GetActionConfiguration(action.Value);
-                config.Samples.Add(metadata);
-                config.RefreshTemplate();
-                if (_profileConfiguration is not null)
+                if (metadata is not null)
                 {
-                    await _profileRepository.SaveProfileConfigurationAsync(_profileConfiguration, CancellationToken.None).ConfigureAwait(true);
+                    var config = GetActionConfiguration(action.Value);
+                    config.Samples.Add(metadata);
+                    config.RefreshTemplate();
+                    UpdateDirectionalTemplateFromSample(action.Value, metadata);
+                    if (_profileConfiguration is not null)
+                    {
+                        await _profileRepository.SaveProfileConfigurationAsync(_profileConfiguration, CancellationToken.None).ConfigureAwait(true);
+                    }
+                    state.UpdateMetadata(config.Samples, config.Template);
+                    RefreshActionStatuses();
                 }
-                state.UpdateMetadata(config.Samples, config.Template);
-                RefreshActionStatuses();
-            }
         _logger.LogInfo($"Stopped recording for {action.Value}");
     }
 
@@ -440,8 +488,75 @@ public sealed class MainWindowViewModel : ViewModelBase
         return _profileConfiguration.ActionConfigurations[action];
     }
 
+    private void WarmUpTrainingTemplates(ProfileConfiguration configuration)
+    {
+        _trainingService.Reset();
+        foreach (var action in DirectionalActions)
+        {
+            var configurationEntry = configuration.ActionConfigurations[action];
+            foreach (var sample in configurationEntry.Samples)
+            {
+                var feature = sample.FeatureSummary?.DirectionalFeature;
+                if (feature is not null)
+                {
+                    _trainingService.AddSample(action, feature);
+                }
+            }
+
+            if (configurationEntry.DirectionalTemplate is null && _trainingService.TryBuildTemplate(action, out var template))
+            {
+                configurationEntry.DirectionalTemplate = template;
+            }
+        }
+
+        RefreshTrainingDebugInfo();
+    }
+
+    private void RefreshTrainingDebugInfo()
+    {
+        if (_profileConfiguration is null)
+        {
+            TrainingDebugInfo = string.Empty;
+            return;
+        }
+
+        var counts = _trainingService.GetSampleCounts();
+        var entries = new List<string>();
+        foreach (var action in DirectionalActions)
+        {
+            counts.TryGetValue(action, out var count);
+            var template = _profileConfiguration.ActionConfigurations[action].DirectionalTemplate;
+            var status = template is not null ? "ready" : "pending";
+            entries.Add($"{action}: {count}/{_trainingService.MaximumSamples} samples ({status})");
+        }
+
+        TrainingDebugInfo = string.Join(" · ", entries);
+    }
+
+    private void UpdateDirectionalTemplateFromSample(VocalAction action, SampleMetadata metadata)
+    {
+        if (metadata.FeatureSummary?.DirectionalFeature is not { } feature || _profileConfiguration is null)
+        {
+            return;
+        }
+
+        _trainingService.AddSample(action, feature);
+        if (_trainingService.TryBuildTemplate(action, out var template))
+        {
+            var config = GetActionConfiguration(action);
+            config.DirectionalTemplate = template;
+            _ = _profileRepository.SaveProfileConfigurationAsync(_profileConfiguration, CancellationToken.None);
+        }
+
+        RefreshTrainingDebugInfo();
+    }
+
     private void ApplyMode(AppMode mode, string micState, string commandState)
     {
+        if (mode != AppMode.Working)
+        {
+            ResetDirectionState();
+        }
         CurrentMode = mode;
         MicrophoneStatus = micState;
         CurrentCommand = commandState;
@@ -581,6 +696,8 @@ public sealed class MainWindowViewModel : ViewModelBase
         var frames = FrameSegmenter.Segment(args.Buffer.Samples, _frameSettings, args.Buffer.SampleRate).ToList();
         if (!frames.Any())
         {
+            BufferDebugInfo = FormatEmptyBufferDebug(args.Buffer);
+            _logger.LogWarning("Buffer dropped – no frames available");
             return;
         }
 
@@ -592,11 +709,21 @@ public sealed class MainWindowViewModel : ViewModelBase
             VADActive = result.IsActive;
             VadState = result.IsActive ? "Active" : "Inactive";
             UpdateSignalLevel(result.Rms);
+            BufferDebugInfo = FormatBufferDebug(result, frames.Count, args.Buffer);
         }, null);
 
         FireAndForget(PredictPitchAsync(lastFrame, result, args.Buffer.Timestamp));
         FireAndForget(RecognizeShortClicksAsync(args.Buffer));
     }
+
+    private static string FormatBufferDebug(VoiceActivityResult result, int frameCount, AudioBuffer buffer)
+    {
+        var vadLabel = result.IsActive ? "active" : "inactive";
+        return $"Buffer {buffer.Samples.Length} samples / {frameCount} frames @ {buffer.SampleRate}Hz · RMS {result.Rms:F4} · VAD {vadLabel} · {buffer.Timestamp:HH:mm:ss.fff}";
+    }
+
+    private static string FormatEmptyBufferDebug(AudioBuffer buffer)
+        => $"Buffer {buffer.Samples.Length} samples @ {buffer.SampleRate}Hz · no frames extracted · {buffer.Timestamp:HH:mm:ss.fff}";
 
     private async Task PredictPitchAsync(Frame frame, VoiceActivityResult voiceActivity, DateTimeOffset bufferTimestamp)
     {
@@ -704,6 +831,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             }
         }, TaskScheduler.Current);
     }
+
 
     private void RefreshRecordingCommandStates()
     {
@@ -853,9 +981,15 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         var profile = _activeProfile ?? throw new InvalidOperationException("Active profile must exist");
         var configuration = await _profileRepository.LoadOrCreateProfileConfigurationAsync(profile, cancellationToken).ConfigureAwait(true);
+        if (configuration.Version < ProfileConfiguration.CurrentVersion)
+        {
+            configuration.Version = ProfileConfiguration.CurrentVersion;
+            await _profileRepository.SaveProfileConfigurationAsync(configuration, cancellationToken).ConfigureAwait(true);
+        }
         _profileConfiguration = configuration;
         RefreshActionStatuses(configuration);
         UpdateActionSampleStates();
+        WarmUpTrainingTemplates(configuration);
         _commandRecognizer.UpdateTemplates(BuildDirectionalTemplates(configuration));
         OnPropertyChanged(nameof(CurrentProfileDisplay));
     }
@@ -877,6 +1011,18 @@ public sealed class MainWindowViewModel : ViewModelBase
     {
         StatusMessage = message;
         StatusSeverity = severity;
+        switch (severity)
+        {
+            case "Warning":
+                _logger.LogWarning(message);
+                break;
+            case "Error":
+                _logger.LogError(message);
+                break;
+            default:
+                _logger.LogInfo(message);
+                break;
+        }
     }
 
     private void UpdateCommandStates()
@@ -893,9 +1039,18 @@ public sealed class MainWindowViewModel : ViewModelBase
         DirectionRecognitionConfidence = result.Confidence;
         DirectionRecognitionDebug = result.Debug;
 
+        if (previousDirection != RecognizedDirection)
+        {
+            var directionLabel = RecognizedDirection?.ToString() ?? "none";
+            _logger.LogInfo($"Direction recognition: {directionLabel}, confidence {DirectionConfidenceDisplay}, status {DirectionRecognitionStatus}");
+        }
+
         if (RecognizedDirection is not null)
         {
-            StartMovementLoop();
+            if (CurrentMode == AppMode.Working)
+            {
+                StartMovementLoop();
+            }
         }
         else if (previousDirection is not null)
         {
@@ -988,5 +1143,17 @@ public sealed class MainWindowViewModel : ViewModelBase
         DirectionRecognitionConfidence = 0;
         DirectionRecognitionDebug = DirectionalRecognitionDebugState.Idle;
         StopMovementLoop();
+    }
+
+    private void OnDirectionDebugChanged()
+    {
+        OnPropertyChanged(nameof(DirectionRecognitionStatus));
+        OnPropertyChanged(nameof(DirectionConfidenceDisplay));
+        OnPropertyChanged(nameof(DirectionHoldDisplay));
+        OnPropertyChanged(nameof(DirectionVoiceDisplay));
+        OnPropertyChanged(nameof(DirectionPitchDisplay));
+        OnPropertyChanged(nameof(DirectionRmsDisplay));
+        OnPropertyChanged(nameof(DirectionTemplateStatus));
+        OnPropertyChanged(nameof(DirectionCandidateDisplay));
     }
 }

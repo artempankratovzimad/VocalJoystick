@@ -18,6 +18,18 @@ public sealed class ActionSampleState : ViewModelBase
 
     public VocalAction Action { get; }
 
+    public bool IsDirectional => Action switch
+    {
+        VocalAction.MoveUp or VocalAction.MoveDown or VocalAction.MoveLeft or VocalAction.MoveRight => true,
+        _ => false,
+    };
+
+    public bool IsClick => Action switch
+    {
+        VocalAction.LeftClick or VocalAction.RightClick or VocalAction.DoubleClick => true,
+        _ => false,
+    };
+
     public bool IsRecording
     {
         get => _isRecording;

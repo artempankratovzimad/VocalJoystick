@@ -7,4 +7,5 @@ public sealed record SampleFeatureSummary(
     double PitchStdDev,
     double SpectralCentroid,
     double SpectralRolloff,
-    double VoicedRatio);
+    double VoicedRatio,
+    DirectionalFeatureVector? DirectionalFeature = null);

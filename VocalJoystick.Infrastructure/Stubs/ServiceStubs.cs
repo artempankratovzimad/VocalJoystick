@@ -86,9 +86,9 @@ public sealed class StubFeatureExtractor : IFeatureExtractor
     {
         var magnitude = buffer.Samples.Take(8).Select(s => Math.Abs(s)).Select(Convert.ToSingle).ToArray();
         var rms = buffer.Samples.Length == 0 ? 0d : Math.Sqrt(buffer.Samples.Sum(sample => sample * sample) / buffer.Samples.Length);
-        var summary = new SampleFeatureSummary(rms, 0, 0, 0, 0, 0, 0);
+        var summary = new SampleFeatureSummary(rms, 0, 0, 0, 0, 0, 0, null);
         var featureVector = magnitude.Length == 0 ? Array.Empty<float>() : magnitude;
-        var result = new FeatureExtractionResult(featureVector, summary);
+        var result = new FeatureExtractionResult(featureVector, summary, null);
         return Task.FromResult(result);
     }
 }

@@ -12,12 +12,14 @@ namespace VocalJoystick.Audio;
 public sealed class NAudioCaptureService : IAudioCaptureService, IDisposable
 {
     private readonly List<AudioDeviceInfo> _availableDevices;
+    private readonly ILogger _logger;
     private WaveInEvent? _waveIn;
     private readonly object _sync = new();
     private double _currentSignalLevel;
 
-    public NAudioCaptureService()
+    public NAudioCaptureService(ILogger logger)
     {
+        _logger = logger;
         _availableDevices = Enumerable.Range(0, WaveInEvent.DeviceCount)
             .Select(index =>
             {
@@ -117,6 +119,7 @@ public sealed class NAudioCaptureService : IAudioCaptureService, IDisposable
         var rms = sampleCount > 0 ? Math.Sqrt(sumSquares / sampleCount) : 0d;
         _currentSignalLevel = rms;
         SignalLevelUpdated?.Invoke(this, rms);
+        _logger.LogInfo($"Audio buffer: {bytesRecorded} bytes, {sampleCount} samples, RMS {rms:F4}");
         BufferCaptured?.Invoke(this, new AudioBufferEventArgs(new AudioBuffer(samples, _waveIn?.WaveFormat.SampleRate ?? 16000)));
     }
 
@@ -127,6 +130,14 @@ public sealed class NAudioCaptureService : IAudioCaptureService, IDisposable
         IsCapturing = false;
         _currentSignalLevel = 0;
         SignalLevelUpdated?.Invoke(this, 0);
+        if (e.Exception is not null)
+        {
+            _logger.LogError("WaveIn recording stopped with exception", e.Exception);
+        }
+        else
+        {
+            _logger.LogInfo("WaveIn recording stopped");
+        }
     }
 
     public void Dispose()

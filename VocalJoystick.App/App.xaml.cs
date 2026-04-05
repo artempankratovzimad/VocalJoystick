@@ -8,8 +8,10 @@ using VocalJoystick.Infrastructure;
 using VocalJoystick.Infrastructure.Logging;
 using VocalJoystick.Infrastructure.Persistence;
 using VocalJoystick.Infrastructure.Recording;
+using VocalJoystick.Infrastructure.Recognition;
 using VocalJoystick.Input;
 using VocalJoystick.Recognition;
+using VocalJoystick.Recognition.FeatureExtraction;
 
 namespace VocalJoystick.App;
 
@@ -39,10 +41,17 @@ public partial class App : Application
         services.RegisterSingleton<ILogger>(sp => new FileLogger(sp.GetRequiredService<IAppStorageLocation>()));
         services.RegisterSingleton<IProfileRepository>(sp => new JsonProfileRepository(sp.GetRequiredService<IAppStorageLocation>()));
         services.RegisterSingleton<ISettingsRepository>(sp => new JsonSettingsRepository(sp.GetRequiredService<IAppStorageLocation>()));
-        services.RegisterSingleton<IAudioCaptureService>(_ => new NAudioCaptureService());
+        services.RegisterSingleton<IAudioCaptureService>(_ => new NAudioCaptureService(_.GetRequiredService<ILogger>()));
         services.RegisterSingleton<IVoiceActivityDetector>(_ => new EnergyVoiceActivityDetector());
         services.RegisterSingleton<IPitchDetector>(_ => new AutocorrelationPitchDetector());
-        services.RegisterSingleton<IFeatureExtractor>(sp => new FeatureExtractor(sp.GetRequiredService<IPitchDetector>(), sp.GetRequiredService<IVoiceActivityDetector>()));
+        services.RegisterSingleton<IFormantExtractor>(_ => new BasicFormantExtractor());
+        services.RegisterSingleton<IMfccExtractor>(_ => new BasicMfccExtractor());
+        services.RegisterSingleton<IFeatureExtractor>(sp => new FeatureExtractor(
+            sp.GetRequiredService<IPitchDetector>(),
+            sp.GetRequiredService<IVoiceActivityDetector>(),
+            sp.GetRequiredService<IFormantExtractor>(),
+            sp.GetRequiredService<IMfccExtractor>()));
+        services.RegisterSingleton<IDirectionalTrainingService>(_ => new DirectionalTrainingService());
         services.RegisterSingleton<IShortClickRecognitionEngine>(sp => new ShortClickRecognitionEngine(sp.GetRequiredService<IFeatureExtractor>()));
         services.RegisterSingleton<ISampleRecorder>(sp => new SampleRecorder(
             sp.GetRequiredService<IAudioCaptureService>(),
@@ -62,6 +71,7 @@ public partial class App : Application
             sp.GetRequiredService<IShortClickRecognitionEngine>(),
             sp.GetRequiredService<ICommandRecognizer>(),
             sp.GetRequiredService<IMouseController>(),
+            sp.GetRequiredService<IDirectionalTrainingService>(),
             sp.GetRequiredService<ILogger>()));
 
         services.RegisterSingleton<MainWindow>(sp => new MainWindow(sp.GetRequiredService<MainWindowViewModel>()));

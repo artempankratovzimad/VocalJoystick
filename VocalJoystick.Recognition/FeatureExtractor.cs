@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,11 +14,15 @@ public sealed class FeatureExtractor : IFeatureExtractor
     private readonly FrameProcessingSettings _settings = FrameProcessingSettings.CreateDefault();
     private readonly IVoiceActivityDetector _voiceActivityDetector;
     private readonly IPitchDetector _pitchDetector;
+    private readonly IFormantExtractor _formantExtractor;
+    private readonly IMfccExtractor _mfccExtractor;
 
-    public FeatureExtractor(IPitchDetector pitchDetector, IVoiceActivityDetector voiceActivityDetector)
+    public FeatureExtractor(IPitchDetector pitchDetector, IVoiceActivityDetector voiceActivityDetector, IFormantExtractor formantExtractor, IMfccExtractor mfccExtractor)
     {
         _pitchDetector = pitchDetector;
         _voiceActivityDetector = voiceActivityDetector;
+        _formantExtractor = formantExtractor;
+        _mfccExtractor = mfccExtractor;
     }
 
     public async Task<FeatureExtractionResult> ExtractFeaturesAsync(AudioBuffer buffer, CancellationToken cancellationToken)
@@ -31,6 +36,7 @@ public sealed class FeatureExtractor : IFeatureExtractor
         var rolloffs = new List<double>();
         var voicedFrames = 0;
         var pitchValues = new List<double>();
+        var pitchConfidence = new List<double>();
 
         foreach (var frame in frames)
         {
@@ -51,6 +57,7 @@ public sealed class FeatureExtractor : IFeatureExtractor
             {
                 pitchValues.Add(pitchResult.PitchHz.Value);
             }
+            pitchConfidence.Add(pitchResult.Confidence);
         }
 
         var averageCentroid = centroids.Any() ? centroids.Average() : 0;
@@ -58,6 +65,14 @@ public sealed class FeatureExtractor : IFeatureExtractor
         var voicedRatio = frames.Length == 0 ? 0 : (double)voicedFrames / frames.Length;
         var pitchMean = pitchValues.Any() ? pitchValues.Average() : 0;
         var pitchStdDev = pitchValues.Count > 1 ? CalculateStandardDeviation(pitchValues, pitchMean) : 0;
+        var pitchConfAverage = pitchConfidence.Count > 0 ? pitchConfidence.Average() : 0;
+        var spectralSpread = centroids.Count > 1
+            ? Math.Sqrt(centroids.Average(value => Math.Pow(value - averageCentroid, 2)))
+            : 0;
+        var power = samples.Length == 0 ? 0 : samples.Sum(sample => sample * sample) / samples.Length;
+        var formants = _formantExtractor.ExtractFormants(samples, buffer.SampleRate);
+        var mfcc = _mfccExtractor.ExtractMfcc(samples, buffer.SampleRate);
+        var directionalVoiced = voicedRatio >= 0.15;
 
         var featureVector = new float[]
         {
@@ -70,6 +85,17 @@ public sealed class FeatureExtractor : IFeatureExtractor
             (float)voicedRatio
         };
 
+        var directionalFeature = new DirectionalFeatureVector(
+            mfcc,
+            formants,
+            overallRms,
+            averageCentroid,
+            spectralSpread,
+            directionalVoiced,
+            pitchMean,
+            pitchConfAverage,
+            power);
+
         var summary = new SampleFeatureSummary(
             overallRms,
             zeroCrossingRate,
@@ -77,9 +103,10 @@ public sealed class FeatureExtractor : IFeatureExtractor
             pitchStdDev,
             averageCentroid,
             averageRolloff,
-            voicedRatio);
+            voicedRatio,
+            directionalFeature);
 
-        return new FeatureExtractionResult(featureVector, summary);
+        return new FeatureExtractionResult(featureVector, summary, directionalFeature);
     }
 
     private static double CalculateZeroCrossingRate(float[] samples)

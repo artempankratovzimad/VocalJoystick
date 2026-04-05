@@ -1,16 +1,22 @@
 using System.Linq;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using VocalJoystick.Core.Models;
 using VocalJoystick.Recognition;
+using VocalJoystick.Recognition.FeatureExtraction;
 
 namespace VocalJoystick.Tests;
 
 [TestClass]
 public sealed class FeatureExtractorTests
 {
-    private static FeatureExtractor CreateExtractor() => new(new AutocorrelationPitchDetector(), new EnergyVoiceActivityDetector());
+    private static FeatureExtractor CreateExtractor() => new(
+        new AutocorrelationPitchDetector(),
+        new EnergyVoiceActivityDetector(),
+        new BasicFormantExtractor(),
+        new BasicMfccExtractor());
 
     [TestMethod]
     public async Task ExtractFeatures_ForSineWave_ReturnsVoicedSummary()

@@ -30,7 +30,7 @@ public sealed class ClickRecognitionTests
     public void ShortClickTemplateClassifier_ReturnsActionWhenClose()
     {
         var classifier = new ShortClickTemplateClassifier();
-        var summary = new SampleFeatureSummary(0.5, 0.1, 220, 5, 1200, 0.8, 0.7);
+            var summary = new SampleFeatureSummary(0.5, 0.1, 220, 5, 1200, 0.8, 0.7, null);
         var template = new ActionTemplate
         {
             SampleCount = 3,
@@ -55,11 +55,11 @@ public sealed class ClickRecognitionTests
     [TestMethod]
     public async Task ShortClickRecognitionEngine_RespectsCooldown()
     {
-        var summary = new SampleFeatureSummary(0.4, 0.1, 180, 1, 4, 950, 0.9);
+            var summary = new SampleFeatureSummary(0.4, 0.1, 180, 1, 4, 950, 0.9, null);
         var featureQueue = new Queue<FeatureExtractionResult>(new[]
         {
-            new FeatureExtractionResult(Array.Empty<float>(), summary),
-            new FeatureExtractionResult(Array.Empty<float>(), summary)
+            new FeatureExtractionResult(Array.Empty<float>(), summary, null),
+            new FeatureExtractionResult(Array.Empty<float>(), summary, null)
         });
 
         var extractor = new QueueFeatureExtractor(featureQueue);

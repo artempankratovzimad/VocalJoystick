@@ -114,7 +114,11 @@ public sealed class SampleRecorder : ISampleRecorder, IDisposable
 
     private void OnBufferCaptured(object? sender, AudioBufferEventArgs args)
     {
-        _activeSession?.Write(args.Buffer.Samples);
+        if (_activeSession is not null)
+        {
+            _logger.LogInfo($"Recording session {_activeSession.Action}: writing {args.Buffer.Samples.Length} samples at {args.Buffer.SampleRate}Hz");
+            _activeSession.Write(args.Buffer.Samples);
+        }
     }
 
     private string GetActionFolder(string profileId, VocalAction action)

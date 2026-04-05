@@ -6,6 +6,10 @@ namespace VocalJoystick.Core.Models;
 
 public sealed class ProfileConfiguration
 {
+    public const int CurrentVersion = 2;
+
+    public int Version { get; set; } = CurrentVersion;
+
     public UserProfileMetadata Metadata { get; set; } = new();
     public Dictionary<VocalAction, ActionConfiguration> ActionConfigurations { get; set; } =
         Enum.GetValues<VocalAction>()
