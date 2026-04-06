@@ -1,5 +1,7 @@
 using System;
 
+using System.Collections.Generic;
+
 namespace VocalJoystick.Core.Models;
 
 public sealed record DirectionalRecognitionDebugState(
@@ -17,7 +19,8 @@ public sealed record DirectionalRecognitionDebugState(
     double PitchConfidence,
     bool VoiceActive,
     bool HasTemplates,
-    string Status)
+    string Status,
+    IReadOnlyDictionary<VocalAction, double?>? Similarities = null)
 {
     public static DirectionalRecognitionDebugState Idle { get; } = new(
         DateTimeOffset.MinValue,

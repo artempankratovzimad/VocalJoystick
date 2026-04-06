@@ -146,7 +146,8 @@ public sealed class VowelDirectionalRecognizer : IDirectionalVowelRecognizer
             pitch.Confidence,
             voiceActivity.IsActive,
             _templates.Any(),
-            candidate is null ? "Candidate pending" : "Active");
+            candidate is null ? "Candidate pending" : "Active",
+            candidate?.Similarities);
     }
 
     private void ResetActiveHold()

@@ -64,6 +64,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     private string _statusSeverity = "Info";
     private string _bufferDebugInfo = "Waiting for microphone buffer...";
     private string _trainingDebugInfo = string.Empty;
+    private bool _directionalDebugEnabled;
 
     public MainWindowViewModel(
         IProfileRepository profileRepository,
@@ -195,6 +196,12 @@ public sealed class MainWindowViewModel : ViewModelBase
     {
         get => _trainingDebugInfo;
         private set => SetProperty(ref _trainingDebugInfo, value);
+    }
+
+    public bool DirectionalDebugEnabled
+    {
+        get => _directionalDebugEnabled;
+        set => SetProperty(ref _directionalDebugEnabled, value);
     }
 
     public string ClickRecognitionStatus
@@ -820,16 +827,58 @@ public sealed class MainWindowViewModel : ViewModelBase
 
             var extraction = await _featureExtractor.ExtractFeaturesAsync(buffer, CancellationToken.None).ConfigureAwait(true);
             BufferDebugInfo = FormatBufferDebug(voiceActivity, frameCount, buffer);
+            DirectionalRecognitionResult? recognitionResult = null;
             if (CurrentMode == AppMode.Working && extraction.DirectionalFeature is not null)
             {
-                var recognitionResult = _directionalRecognizer.Recognize(voiceActivity, pitchResult, extraction.DirectionalFeature, buffer.Timestamp);
+                recognitionResult = _directionalRecognizer.Recognize(voiceActivity, pitchResult, extraction.DirectionalFeature, buffer.Timestamp);
                 _uiContext.Post(_ => UpdateDirectionRecognitionState(recognitionResult), null);
             }
+
+            LogDirectionalDebug(buffer, frameCount, voiceActivity, pitchResult, extraction, recognitionResult);
         }
         catch (Exception ex)
         {
             _logger.LogError("Recognition buffer failed", ex);
         }
+    }
+
+    private void LogDirectionalDebug(AudioBuffer buffer, int frameCount, VoiceActivityResult voiceActivity, PitchDetectionResult pitch, FeatureExtractionResult extraction, DirectionalRecognitionResult? recognitionResult)
+    {
+        if (!DirectionalDebugEnabled)
+        {
+            return;
+        }
+
+        var feature = extraction.DirectionalFeature;
+        var metrics = DirectionalSampleMetrics.FromFeatureVector(feature);
+        var debugState = recognitionResult?.Debug ?? DirectionalRecognitionDebugState.Idle;
+        var candidate = debugState.CandidateDirection?.ToString() ?? "none";
+        var activeDirection = recognitionResult?.ActiveDirection?.ToString() ?? "none";
+        var pitchDisplay = pitch.PitchHz.HasValue ? $"{pitch.PitchHz.Value:F1}Hz" : "—";
+        var mfccMean = metrics?.MfccMean.ToString("F3") ?? "n/a";
+        var firstFormant = metrics?.FormantFirstHz.ToString("F1") ?? "n/a";
+        var secondFormant = metrics?.FormantSecondHz.ToString("F1") ?? "n/a";
+        var formantDelta = metrics?.FormantDeltaHz.ToString("F1") ?? "n/a";
+        var spectralCentroid = metrics?.SpectralCentroid.ToString("F1") ?? "n/a";
+        var confidence = recognitionResult?.Confidence ?? 0;
+        var status = debugState.Status;
+        var featureFlag = feature is not null ? "yes" : "no";
+
+        var message = $"[DirectionalDebug] {buffer.Timestamp:HH:mm:ss.fff} frames={frameCount} vad={(voiceActivity.IsActive ? "active" : "inactive")} pitch={pitchDisplay} pitchConf={pitch.Confidence:P0} feature={featureFlag} MFCCmean={mfccMean} F1={firstFormant} F2={secondFormant} Δ={formantDelta} spectral={spectralCentroid} candidate={candidate} active={activeDirection} confidence={confidence:P0} status={status}";
+        var similarities = debugState.Similarities ?? new Dictionary<VocalAction, double?>();
+        var comparisons = DirectionalActions.Select(action =>
+        {
+            similarities.TryGetValue(action, out var similarity);
+            return similarity.HasValue
+                ? $"{action}:{similarity.Value:P0}"
+                : $"{action}:n/a";
+        });
+        var joined = string.Join(", ", comparisons);
+        if (!string.IsNullOrEmpty(joined))
+        {
+            message += $" | similarities={joined}";
+        }
+        _logger.LogDebug(message);
     }
 
     private async Task RecognizeShortClicksAsync(AudioBuffer buffer)

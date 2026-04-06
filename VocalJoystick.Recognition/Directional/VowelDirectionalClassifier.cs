@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using VocalJoystick.Core.Interfaces;
 using VocalJoystick.Core.Models;
@@ -32,25 +33,26 @@ public sealed class VowelDirectionalClassifier : IDirectionalClassifier
             .Select(kvp =>
             {
                 var templateMetrics = DirectionalSampleMetrics.FromFeatureVector(kvp.Value.Prototype);
-                if (templateMetrics is null)
-                {
-                    return (kvp.Key, Similarity: (double?)null);
-                }
-
-                var similarity = DirectionalSampleMetrics.CalculateSimilarity(sampleMetrics, templateMetrics);
-                return (kvp.Key, Similarity: similarity);
+                var similarity = templateMetrics is not null
+                    ? DirectionalSampleMetrics.CalculateSimilarity(sampleMetrics, templateMetrics)
+                    : null;
+                return (Action: kvp.Key, Similarity: similarity);
             })
+            .ToList();
+
+        var similarityLookup = scored.ToDictionary(tuple => tuple.Action, tuple => tuple.Similarity);
+        var winner = scored
             .Where(tuple => tuple.Similarity.HasValue)
             .OrderByDescending(tuple => tuple.Similarity!.Value)
             .FirstOrDefault();
 
-        if (!scored.Similarity.HasValue)
+        if (winner.Similarity is null)
         {
-            return new DirectionalClassificationResult(null, 0, feature, false);
+            return new DirectionalClassificationResult(null, 0, feature, false, similarityLookup);
         }
 
-        var confidence = Math.Clamp(scored.Similarity.Value, 0, 1);
+        var confidence = Math.Clamp(winner.Similarity.Value, 0, 1);
         var reliable = confidence >= _settings.ActivationConfidence;
-        return new DirectionalClassificationResult(scored.Key, confidence, feature, reliable);
+        return new DirectionalClassificationResult(winner.Action, confidence, feature, reliable, similarityLookup);
     }
 }

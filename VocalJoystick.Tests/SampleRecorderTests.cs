@@ -74,6 +74,7 @@ internal sealed class StubAudioCaptureService : IAudioCaptureService
 
 internal sealed class StubLogger : ILogger
 {
+    public void LogDebug(string message) { }
     public void LogInfo(string message) { }
     public void LogWarning(string message) { }
     public void LogError(string message, Exception? exception = null) { }

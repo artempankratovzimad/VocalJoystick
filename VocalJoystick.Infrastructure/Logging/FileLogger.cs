@@ -25,6 +25,8 @@ public sealed class FileLogger : ILogger
 
     public void LogInfo(string message) => Write("INFO", message);
 
+    public void LogDebug(string message) => Write("DEBUG", message);
+
     public void LogWarning(string message) => Write("WARN", message);
 
     private void Write(string level, string message)
