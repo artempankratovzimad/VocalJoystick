@@ -53,6 +53,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     private readonly IDirectionalTrainingService _trainingService;
     private string _clickRecognitionStatus = "Awaiting click events";
     private double _clickRecognitionConfidence;
+    private readonly ClickPrototypeBuilder _clickPrototypeBuilder = new();
     private VocalAction? _recognizedDirection;
     private double _directionRecognitionConfidence;
     private DirectionalRecognitionDebugState _directionRecognitionDebug = DirectionalRecognitionDebugState.Idle;
@@ -272,6 +273,12 @@ public sealed class MainWindowViewModel : ViewModelBase
     {
         get => CurrentSettings.ClickConfidenceThreshold;
         set => UpdateClickConfidenceThreshold(value);
+    }
+
+    public double ClickMarginThreshold
+    {
+        get => CurrentSettings.ClickMarginThreshold;
+        set => UpdateClickMarginThreshold(value);
     }
 
     public int ClickCooldownMs
@@ -749,6 +756,18 @@ public sealed class MainWindowViewModel : ViewModelBase
         _ = _settingsRepository.SaveSettingsAsync(CurrentSettings, CancellationToken.None);
     }
 
+    private void UpdateClickMarginThreshold(double margin)
+    {
+        if (Math.Abs(CurrentSettings.ClickMarginThreshold - margin) < 1e-6)
+        {
+            return;
+        }
+
+        CurrentSettings = CurrentSettings.WithClickMarginThreshold(margin);
+        OnPropertyChanged(nameof(ClickMarginThreshold));
+        _ = _settingsRepository.SaveSettingsAsync(CurrentSettings, CancellationToken.None);
+    }
+
     private void UpdateClickCooldownMs(int cooldownMs)
     {
         if (CurrentSettings.ClickCooldownMs == cooldownMs)
@@ -828,10 +847,18 @@ public sealed class MainWindowViewModel : ViewModelBase
             var extraction = await _featureExtractor.ExtractFeaturesAsync(buffer, CancellationToken.None).ConfigureAwait(true);
             BufferDebugInfo = FormatBufferDebug(voiceActivity, frameCount, buffer);
             DirectionalRecognitionResult? recognitionResult = null;
-            if (CurrentMode == AppMode.Working && extraction.DirectionalFeature is not null)
+            if (CurrentMode == AppMode.Working)
             {
-                recognitionResult = _directionalRecognizer.Recognize(voiceActivity, pitchResult, extraction.DirectionalFeature, buffer.Timestamp);
-                _uiContext.Post(_ => UpdateDirectionRecognitionState(recognitionResult), null);
+                if (!voiceActivity.IsActive)
+                {
+                    _directionalRecognizer.Reset();
+                    _uiContext.Post(_ => ResetDirectionState(), null);
+                }
+                else if (extraction.DirectionalFeature is not null)
+                {
+                    recognitionResult = _directionalRecognizer.Recognize(voiceActivity, pitchResult, extraction.DirectionalFeature, buffer.Timestamp);
+                    _uiContext.Post(_ => UpdateDirectionRecognitionState(recognitionResult), null);
+                }
             }
 
             LogDirectionalDebug(buffer, frameCount, voiceActivity, pitchResult, extraction, recognitionResult);
@@ -849,20 +876,20 @@ public sealed class MainWindowViewModel : ViewModelBase
             return;
         }
 
-        var feature = extraction.DirectionalFeature;
-        var metrics = DirectionalSampleMetrics.FromFeatureVector(feature);
-        var debugState = recognitionResult?.Debug ?? DirectionalRecognitionDebugState.Idle;
-        var candidate = debugState.CandidateDirection?.ToString() ?? "none";
-        var activeDirection = recognitionResult?.ActiveDirection?.ToString() ?? "none";
-        var pitchDisplay = pitch.PitchHz.HasValue ? $"{pitch.PitchHz.Value:F1}Hz" : "—";
-        var mfccMean = metrics?.MfccMean.ToString("F3") ?? "n/a";
-        var firstFormant = metrics?.FormantFirstHz.ToString("F1") ?? "n/a";
-        var secondFormant = metrics?.FormantSecondHz.ToString("F1") ?? "n/a";
-        var formantDelta = metrics?.FormantDeltaHz.ToString("F1") ?? "n/a";
-        var spectralCentroid = metrics?.SpectralCentroid.ToString("F1") ?? "n/a";
-        var confidence = recognitionResult?.Confidence ?? 0;
-        var status = debugState.Status;
-        var featureFlag = feature is not null ? "yes" : "no";
+            var feature = extraction.DirectionalFeature;
+            var metrics = DirectionalSampleMetrics.FromFeatureVector(feature);
+            var debugState = recognitionResult?.Debug ?? DirectionalRecognitionDebugState.Idle;
+            var candidate = debugState.CandidateDirection?.ToString() ?? "none";
+            var activeDirection = recognitionResult?.ActiveDirection?.ToString() ?? "none";
+            var pitchDisplay = pitch.PitchHz.HasValue ? $"{pitch.PitchHz.Value:F1}Hz" : "—";
+            var mfccMean = metrics?.MfccMean.ToString("F3") ?? "n/a";
+            var firstFormant = metrics?.FormantFirstHz.ToString("F1") ?? "n/a";
+            var secondFormant = metrics?.FormantSecondHz.ToString("F1") ?? "n/a";
+            var formantDelta = metrics?.FormantDeltaHz.ToString("F1") ?? "n/a";
+            var spectralCentroid = metrics?.SpectralCentroid.ToString("F1") ?? "n/a";
+            var confidence = recognitionResult?.Confidence ?? 0;
+            var status = debugState.Status;
+            var featureFlag = feature is not null ? "yes" : "no";
 
         var message = $"[DirectionalDebug] {buffer.Timestamp:HH:mm:ss.fff} frames={frameCount} vad={(voiceActivity.IsActive ? "active" : "inactive")} pitch={pitchDisplay} pitchConf={pitch.Confidence:P0} feature={featureFlag} MFCCmean={mfccMean} F1={firstFormant} F2={secondFormant} Δ={formantDelta} spectral={spectralCentroid} candidate={candidate} active={activeDirection} confidence={confidence:P0} status={status}";
         var similarities = debugState.Similarities ?? new Dictionary<VocalAction, double?>();
@@ -888,14 +915,14 @@ public sealed class MainWindowViewModel : ViewModelBase
             return;
         }
 
-        var templates = BuildClickTemplates();
-        if (templates.Count == 0)
+        var prototypes = BuildClickPrototypes();
+        if (prototypes.Count == 0)
         {
             return;
         }
 
         var cooldown = TimeSpan.FromMilliseconds(ClickCooldownMs);
-        var result = await _clickRecognitionEngine.ProcessBufferAsync(buffer, templates, ClickConfidenceThreshold, cooldown, CancellationToken.None).ConfigureAwait(false);
+        var result = await _clickRecognitionEngine.ProcessBufferAsync(buffer, prototypes, ClickConfidenceThreshold, ClickMarginThreshold, cooldown, DirectionalDebugEnabled, CancellationToken.None).ConfigureAwait(false);
         if (result is null)
         {
             return;
@@ -910,23 +937,14 @@ public sealed class MainWindowViewModel : ViewModelBase
         }, null);
     }
 
-    private IReadOnlyDictionary<VocalAction, ActionTemplate> BuildClickTemplates()
+    private IReadOnlyDictionary<VocalAction, ClickPrototype> BuildClickPrototypes()
     {
         if (_profileConfiguration is null)
         {
-            return new Dictionary<VocalAction, ActionTemplate>();
+            return new Dictionary<VocalAction, ClickPrototype>();
         }
 
-        var lookup = new Dictionary<VocalAction, ActionTemplate>();
-        foreach (var action in new[] { VocalAction.LeftClick, VocalAction.RightClick, VocalAction.DoubleClick })
-        {
-            if (_profileConfiguration.ActionConfigurations.TryGetValue(action, out var config) && config.Template.SampleCount > 0)
-            {
-                lookup[action] = config.Template;
-            }
-        }
-
-        return lookup;
+        return _clickPrototypeBuilder.Build(_profileConfiguration.ActionConfigurations.Values);
     }
 
     private void UpdateDirectionalTemplates(ProfileConfiguration configuration)

@@ -6,4 +6,5 @@ public sealed record SampleMetadata(
     DateTimeOffset RecordedAt,
     double DurationSeconds,
     SampleFeatureSummary FeatureSummary,
-    DirectionalSampleMetrics? DirectionalMetrics = null);
+    DirectionalSampleMetrics? DirectionalMetrics = null,
+    ClickSampleMetrics? ClickMetrics = null);

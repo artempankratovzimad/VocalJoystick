@@ -8,7 +8,7 @@ namespace VocalJoystick.Recognition;
 
 public interface IShortClickRecognitionEngine
 {
-    Task<RecognitionResult?> ProcessBufferAsync(AudioBuffer buffer, IReadOnlyDictionary<VocalAction, ActionTemplate> templates, double confidenceThreshold, TimeSpan cooldown, CancellationToken cancellationToken);
+    Task<RecognitionResult?> ProcessBufferAsync(AudioBuffer buffer, IReadOnlyDictionary<VocalAction, ClickPrototype> prototypes, double minSimilarity, double margin, TimeSpan cooldown, bool logDebug, CancellationToken cancellationToken);
 
     void Reset();
 }

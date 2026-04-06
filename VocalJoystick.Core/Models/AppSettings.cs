@@ -1,11 +1,14 @@
 using System;
 
+using System;
+
 namespace VocalJoystick.Core.Models;
 
 public sealed record AppSettings(AppMode LastMode, string? ActiveProfileId, string? SelectedMicrophoneId, FrameProcessingSettings FrameSettings)
 {
     public DateTimeOffset LastUpdated { get; init; } = DateTimeOffset.UtcNow;
     public double ClickConfidenceThreshold { get; init; } = 0.7;
+    public double ClickMarginThreshold { get; init; } = 0.1;
     public int ClickCooldownMs { get; init; } = 400;
     public double MovementSpeed { get; init; } = 320;
 
@@ -33,6 +36,12 @@ public sealed record AppSettings(AppMode LastMode, string? ActiveProfileId, stri
     public AppSettings WithClickConfidenceThreshold(double threshold) => this with
     {
         ClickConfidenceThreshold = Math.Clamp(threshold, 0, 1),
+        LastUpdated = DateTimeOffset.UtcNow
+    };
+
+    public AppSettings WithClickMarginThreshold(double margin) => this with
+    {
+        ClickMarginThreshold = Math.Clamp(margin, 0, 1),
         LastUpdated = DateTimeOffset.UtcNow
     };
 

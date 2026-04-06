@@ -59,7 +59,12 @@ public partial class App : Application
             sp.GetRequiredService<IDirectionalTrainingService>(),
             sp.GetRequiredService<ILogger>(),
             new DirectionalRecognitionSettings()));
-        services.RegisterSingleton<IShortClickRecognitionEngine>(sp => new ShortClickRecognitionEngine(sp.GetRequiredService<IFeatureExtractor>()));
+        services.RegisterSingleton(_ => new ClickSimilarityCalculator());
+        services.RegisterSingleton(sp => new ClickClassifier(sp.GetRequiredService<ClickSimilarityCalculator>()));
+        services.RegisterSingleton<IShortClickRecognitionEngine>(sp => new ShortClickRecognitionEngine(
+            sp.GetRequiredService<IFeatureExtractor>(),
+            sp.GetRequiredService<ClickClassifier>(),
+            sp.GetRequiredService<ILogger>()));
         services.RegisterSingleton<ISampleRecorder>(sp => new SampleRecorder(
             sp.GetRequiredService<IAudioCaptureService>(),
             sp.GetRequiredService<IAppStorageLocation>(),

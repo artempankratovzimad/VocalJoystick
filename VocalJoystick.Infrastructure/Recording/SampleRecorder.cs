@@ -16,6 +16,7 @@ public sealed class SampleRecorder : ISampleRecorder, IDisposable
     private readonly IAppStorageLocation _storageLocation;
     private readonly ILogger _logger;
     private readonly IFeatureExtractor _featureExtractor;
+    private readonly ClickSampleProcessor _clickSampleProcessor;
     private RecordingSession? _activeSession;
 
     public SampleRecorder(
@@ -28,6 +29,7 @@ public sealed class SampleRecorder : ISampleRecorder, IDisposable
         _storageLocation = storageLocation;
         _logger = logger;
         _featureExtractor = featureExtractor;
+        _clickSampleProcessor = new ClickSampleProcessor(featureExtractor, logger);
         _audioCaptureService.BufferCaptured += OnBufferCaptured;
     }
 
@@ -47,7 +49,7 @@ public sealed class SampleRecorder : ISampleRecorder, IDisposable
         var filePath = Path.Combine(folder, fileName);
         var waveFormat = new WaveFormat(16_000, 16, 1);
         var writer = new WaveFileWriter(filePath, waveFormat);
-        _activeSession = new RecordingSession(action, writer, waveFormat.SampleRate, filePath);
+        _activeSession = new RecordingSession(action, writer, waveFormat.SampleRate, filePath, settings);
         _logger.LogInfo($"Recording started for {action} -> {filePath}");
         return Task.CompletedTask;
     }
@@ -63,7 +65,32 @@ public sealed class SampleRecorder : ISampleRecorder, IDisposable
         _activeSession = null;
         session.Dispose();
 
-        var metadata = await BuildMetadataAsync(session, cancellationToken).ConfigureAwait(false);
+        var samples = LoadSamples(session.FilePath);
+        var processedSamples = samples;
+        ClickSampleMetrics? clickMetrics = null;
+        FeatureExtractionResult? extractionOverride = null;
+
+        if (IsClickAction(action))
+        {
+            var clickResult = await _clickSampleProcessor.ProcessAsync(session.Action, samples, session.SampleRate, session.FrameSettings, cancellationToken).ConfigureAwait(false);
+            if (!clickResult.IsSuccess)
+            {
+                if (File.Exists(session.FilePath))
+                {
+                    File.Delete(session.FilePath);
+                }
+
+                _logger.LogWarning($"Click sample rejected for {action}: {clickResult.FailureReason}");
+                return null;
+            }
+
+            processedSamples = clickResult.TrimmedSamples;
+            clickMetrics = clickResult.Metrics;
+            extractionOverride = clickResult.FeatureExtraction;
+            RewriteWaveFile(session.FilePath, processedSamples, session.SampleRate);
+        }
+
+        var metadata = await BuildMetadataAsync(session, processedSamples, extractionOverride, clickMetrics, cancellationToken).ConfigureAwait(false);
         _logger.LogInfo($"Recording stopped for {action}, duration {metadata.DurationSeconds:F2}s");
         return metadata;
     }
@@ -101,15 +128,13 @@ public sealed class SampleRecorder : ISampleRecorder, IDisposable
         return Task.CompletedTask;
     }
 
-    private async Task<SampleMetadata> BuildMetadataAsync(RecordingSession session, CancellationToken cancellationToken)
+    private async Task<SampleMetadata> BuildMetadataAsync(RecordingSession session, float[] samples, FeatureExtractionResult? extractionOverride, ClickSampleMetrics? clickMetrics, CancellationToken cancellationToken)
     {
-        var samples = LoadSamples(session.FilePath);
-        var buffer = new AudioBuffer(samples, session.SampleRate);
-        var extraction = await _featureExtractor.ExtractFeaturesAsync(buffer, cancellationToken).ConfigureAwait(false);
+        var extraction = extractionOverride ?? await _featureExtractor.ExtractFeaturesAsync(new AudioBuffer(samples, session.SampleRate), cancellationToken).ConfigureAwait(false);
         var duration = samples.Length / (double)Math.Max(1, session.SampleRate);
         var relativePath = Path.GetRelativePath(_storageLocation.BaseFolder, session.FilePath);
         var directionalMetrics = DirectionalSampleMetrics.FromFeatureVector(extraction.DirectionalFeature);
-        return new SampleMetadata(session.FileName, relativePath, DateTimeOffset.UtcNow, duration, extraction.Summary, directionalMetrics);
+        return new SampleMetadata(session.FileName, relativePath, DateTimeOffset.UtcNow, duration, extraction.Summary, directionalMetrics, clickMetrics);
     }
 
     private static float[] LoadSamples(string path)
@@ -135,6 +160,32 @@ public sealed class SampleRecorder : ISampleRecorder, IDisposable
         return samples.ToArray();
     }
 
+    private static bool IsClickAction(VocalAction action)
+        => action is VocalAction.LeftClick or VocalAction.RightClick or VocalAction.DoubleClick;
+
+    private static void RewriteWaveFile(string path, float[] samples, int sampleRate)
+    {
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
+
+        using var writer = new WaveFileWriter(path, new WaveFormat(sampleRate, 16, 1));
+        var buffer = new byte[samples.Length * 2];
+        var offset = 0;
+        foreach (var sample in samples)
+        {
+            var clamped = Math.Max(short.MinValue, Math.Min(short.MaxValue, (short)(sample * 32767)));
+            buffer[offset++] = (byte)(clamped & 0xFF);
+            buffer[offset++] = (byte)((clamped >> 8) & 0xFF);
+        }
+
+        if (buffer.Length > 0)
+        {
+            writer.Write(buffer, 0, buffer.Length);
+        }
+    }
+
     private void OnBufferCaptured(object? sender, AudioBufferEventArgs args)
     {
         if (_activeSession is not null)
@@ -157,13 +208,14 @@ public sealed class SampleRecorder : ISampleRecorder, IDisposable
 
     private sealed class RecordingSession : IDisposable
     {
-        public RecordingSession(VocalAction action, WaveFileWriter writer, int sampleRate, string filePath)
+        public RecordingSession(VocalAction action, WaveFileWriter writer, int sampleRate, string filePath, FrameProcessingSettings frameSettings)
         {
             Action = action;
             Writer = writer;
             SampleRate = sampleRate;
             FilePath = filePath;
             FileName = Path.GetFileName(filePath);
+            FrameSettings = frameSettings;
         }
 
         public VocalAction Action { get; }
@@ -172,6 +224,7 @@ public sealed class SampleRecorder : ISampleRecorder, IDisposable
         public string FilePath { get; }
         public string FileName { get; }
         public long SamplesWritten { get; private set; }
+        public FrameProcessingSettings FrameSettings { get; }
 
         public void Write(float[] samples)
         {

@@ -263,8 +263,10 @@
                     <TextBox Style="{StaticResource SelectableTextBoxStyle}" FontSize="12" Foreground="{StaticResource MutedTextBrush}"
                              Text="{Binding ClickRecognitionConfidence, Mode=OneWay, StringFormat='Confidence: {0:P0}'}" />
                     <TextBlock FontSize="12" Foreground="{StaticResource MutedTextBrush}" Text="Threshold" Margin="0 8 0 0" />
-                <Slider Minimum="0" Maximum="1" SmallChange="0.05" Value="{Binding ClickConfidenceThreshold, Mode=TwoWay}" />
-                <TextBox Style="{StaticResource SelectableTextBoxStyle}" FontSize="12" Foreground="{StaticResource MutedTextBrush}" Text="Cooldown (ms)" Margin="0 10 0 0" />
+                    <Slider Minimum="0" Maximum="1" SmallChange="0.05" Value="{Binding ClickConfidenceThreshold, Mode=TwoWay}" />
+                    <TextBlock FontSize="12" Foreground="{StaticResource MutedTextBrush}" Text="Margin" Margin="0 8 0 0" />
+                    <Slider Minimum="0" Maximum="0.5" SmallChange="0.01" Value="{Binding ClickMarginThreshold, Mode=TwoWay}" />
+                    <TextBox Style="{StaticResource SelectableTextBoxStyle}" FontSize="12" Foreground="{StaticResource MutedTextBrush}" Text="Cooldown (ms)" Margin="0 10 0 0" />
                 <TextBox Text="{Binding ClickCooldownMs, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="120" Background="{StaticResource InputBackgroundBrush}" Foreground="{StaticResource PrimaryTextBrush}" BorderBrush="{StaticResource ControlBorderBrush}" />
             </StackPanel>
         </Border>

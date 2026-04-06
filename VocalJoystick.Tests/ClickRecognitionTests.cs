@@ -63,30 +63,30 @@ public sealed class ClickRecognitionTests
         });
 
         var extractor = new QueueFeatureExtractor(featureQueue);
+        var classifier = new ClickClassifier(new ClickSimilarityCalculator());
         var segmenter = new ShortEventSegmenter(0.1f, silenceSampleLimit: 2, maxEventSamples: 64);
-        var engine = new ShortClickRecognitionEngine(extractor, segmenter);
-        var template = new ActionTemplate
-        {
-            SampleCount = 1,
-            AverageDurationSeconds = 0.15,
-            AverageRms = 0.4,
-            AverageZeroCrossingRate = 0.12,
-            AveragePitchHz = 180,
-            PitchStdDev = 1,
-            AverageSpectralCentroid = 4,
-            AverageSpectralRolloff = 950,
-            VoicedRatio = 0.9
-        };
-        var templates = new Dictionary<VocalAction, ActionTemplate> { [VocalAction.LeftClick] = template };
+        var engine = new ShortClickRecognitionEngine(extractor, classifier, new TestLogger(), segmenter);
+        var stats = new ClickFeatureStats(200, 100);
+        var prototype = new ClickPrototype(
+            VocalAction.LeftClick,
+            stats,
+            stats,
+            stats,
+            stats,
+            stats,
+            stats,
+            stats,
+            Enumerable.Repeat(0d, 13).ToArray());
+        var prototypes = new Dictionary<VocalAction, ClickPrototype> { [VocalAction.LeftClick] = prototype };
 
         var now = DateTimeOffset.UtcNow;
         var buffer = new AudioBuffer(CreateEventSamples(), 16000) { Timestamp = now };
-        var first = await engine.ProcessBufferAsync(buffer, templates, 0, TimeSpan.FromSeconds(1), CancellationToken.None);
+        var first = await engine.ProcessBufferAsync(buffer, prototypes, 0, 0, TimeSpan.FromSeconds(1), false, CancellationToken.None);
 
         Assert.IsNotNull(first);
 
         var buffer2 = new AudioBuffer(CreateEventSamples(), 16000) { Timestamp = now.AddMilliseconds(10) };
-        var second = await engine.ProcessBufferAsync(buffer2, templates, 0, TimeSpan.FromSeconds(1), CancellationToken.None);
+        var second = await engine.ProcessBufferAsync(buffer2, prototypes, 0, 0, TimeSpan.FromSeconds(1), false, CancellationToken.None);
 
         Assert.IsNull(second);
     }
@@ -120,5 +120,13 @@ public sealed class ClickRecognitionTests
 
             return Task.FromResult(_results.Dequeue());
         }
+    }
+
+    private sealed class TestLogger : ILogger
+    {
+        public void LogInfo(string message) { }
+        public void LogWarning(string message) { }
+        public void LogError(string message, Exception? exception = null) { }
+        public void LogDebug(string message) { }
     }
 }
