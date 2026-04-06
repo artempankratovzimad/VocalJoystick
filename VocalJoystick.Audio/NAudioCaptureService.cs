@@ -119,7 +119,6 @@ public sealed class NAudioCaptureService : IAudioCaptureService, IDisposable
         var rms = sampleCount > 0 ? Math.Sqrt(sumSquares / sampleCount) : 0d;
         _currentSignalLevel = rms;
         SignalLevelUpdated?.Invoke(this, rms);
-        _logger.LogInfo($"Audio buffer: {bytesRecorded} bytes, {sampleCount} samples, RMS {rms:F4}");
         BufferCaptured?.Invoke(this, new AudioBufferEventArgs(new AudioBuffer(samples, _waveIn?.WaveFormat.SampleRate ?? 16000)));
     }
 

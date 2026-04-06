@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("VocalJoystick.Tests")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+79db93808cf575ae49c7a37051abec0217baa1db")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+2e4fddb587a47a0d156903519ac8bfc0f0d1ed00")]
 [assembly: System.Reflection.AssemblyProductAttribute("VocalJoystick.Tests")]
 [assembly: System.Reflection.AssemblyTitleAttribute("VocalJoystick.Tests")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
