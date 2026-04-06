@@ -5,4 +5,5 @@ public sealed record SampleMetadata(
     string RelativePath,
     DateTimeOffset RecordedAt,
     double DurationSeconds,
-    SampleFeatureSummary FeatureSummary);
+    SampleFeatureSummary FeatureSummary,
+    DirectionalSampleMetrics? DirectionalMetrics = null);

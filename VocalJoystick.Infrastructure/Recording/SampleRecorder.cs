@@ -1,4 +1,5 @@
 using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
@@ -79,6 +80,27 @@ public sealed class SampleRecorder : ISampleRecorder, IDisposable
         return Task.CompletedTask;
     }
 
+    public Task DeleteSampleAsync(string profileId, SampleMetadata sample, CancellationToken cancellationToken)
+    {
+        if (sample is null)
+        {
+            throw new ArgumentNullException(nameof(sample));
+        }
+
+        var path = Path.Combine(_storageLocation.BaseFolder, sample.RelativePath ?? string.Empty);
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+            _logger.LogInfo($"Deleted sample file {sample.FileName}");
+        }
+        else
+        {
+            _logger.LogWarning($"Sample file not found for deletion: {sample.RelativePath}");
+        }
+
+        return Task.CompletedTask;
+    }
+
     private async Task<SampleMetadata> BuildMetadataAsync(RecordingSession session, CancellationToken cancellationToken)
     {
         var samples = LoadSamples(session.FilePath);
@@ -86,7 +108,8 @@ public sealed class SampleRecorder : ISampleRecorder, IDisposable
         var extraction = await _featureExtractor.ExtractFeaturesAsync(buffer, cancellationToken).ConfigureAwait(false);
         var duration = samples.Length / (double)Math.Max(1, session.SampleRate);
         var relativePath = Path.GetRelativePath(_storageLocation.BaseFolder, session.FilePath);
-        return new SampleMetadata(session.FileName, relativePath, DateTimeOffset.UtcNow, duration, extraction.Summary);
+        var directionalMetrics = DirectionalSampleMetrics.FromFeatureVector(extraction.DirectionalFeature);
+        return new SampleMetadata(session.FileName, relativePath, DateTimeOffset.UtcNow, duration, extraction.Summary, directionalMetrics);
     }
 
     private static float[] LoadSamples(string path)

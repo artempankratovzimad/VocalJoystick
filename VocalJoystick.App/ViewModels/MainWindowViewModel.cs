@@ -49,6 +49,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     private readonly DelegateCommand _configurationModeCommand;
     private readonly DelegateCommand _workingModeCommand;
     private readonly DelegateCommand _stopCommand;
+    private readonly DelegateCommand<VocalAction?> _viewSamplesCommand;
     private readonly IDirectionalTrainingService _trainingService;
     private string _clickRecognitionStatus = "Awaiting click events";
     private double _clickRecognitionConfidence;
@@ -121,6 +122,9 @@ public sealed class MainWindowViewModel : ViewModelBase
         DeleteRecordingCommand = new DelegateCommand<VocalAction?>(
             action => FireAndForget(DeleteRecordingsForAction(action)),
             action => action.HasValue && !_actionStateMap[action.Value].IsRecording);
+        _viewSamplesCommand = new DelegateCommand<VocalAction?>(
+            action => FireAndForget(ShowDirectionalSamplesAsync(action)),
+            action => action.HasValue && _actionStateMap[action.Value].IsDirectional && _actionStateMap[action.Value].HasSamples);
     }
 
     public DelegateCommand ConfigurationModeCommand => _configurationModeCommand;
@@ -162,6 +166,8 @@ public sealed class MainWindowViewModel : ViewModelBase
     public DelegateCommand<VocalAction?> StartRecordingCommand { get; }
     public DelegateCommand<VocalAction?> StopRecordingCommand { get; }
     public DelegateCommand<VocalAction?> DeleteRecordingCommand { get; }
+    public DelegateCommand<VocalAction?> ViewSamplesCommand => _viewSamplesCommand;
+    public event EventHandler<SampleListRequestEventArgs>? SampleListRequested;
 
     public string CurrentProfileDisplay => _activeProfile?.DisplayName ?? "(no profile)";
 
@@ -479,6 +485,72 @@ public sealed class MainWindowViewModel : ViewModelBase
         RefreshActionStatuses();
         _logger.LogInfo($"Deleted recordings for {action.Value}");
         RefreshRecordingCommandStates();
+    }
+
+    private Task ShowDirectionalSamplesAsync(VocalAction? action)
+    {
+        if (action is null || _profileConfiguration is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        var config = GetActionConfiguration(action.Value);
+        if (config.Samples.Count == 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        var averageMetrics = config.DirectionalMetricsAverage
+            ?? DirectionalSampleMetrics.FromFeatureVector(config.DirectionalTemplate?.Prototype);
+        var args = new SampleListRequestEventArgs(
+            action.Value,
+            config.Samples.ToList(),
+            config.DirectionalTemplate,
+            averageMetrics,
+            sample => DeleteDirectionalSampleAsync(action.Value, sample));
+
+        SampleListRequested?.Invoke(this, args);
+        return Task.CompletedTask;
+    }
+
+    private async Task<bool> DeleteDirectionalSampleAsync(VocalAction action, SampleMetadata sample)
+    {
+        if (_profileConfiguration is null || _activeProfile is null || sample is null)
+        {
+            return false;
+        }
+
+        var config = GetActionConfiguration(action);
+        var index = config.Samples.IndexOf(sample);
+        if (index < 0)
+        {
+            return false;
+        }
+
+        config.Samples.RemoveAt(index);
+        config.RefreshTemplate();
+        config.DirectionalTemplate = null;
+
+        try
+        {
+            await _sampleRecorder.DeleteSampleAsync(_activeProfile.Id, sample, CancellationToken.None).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Failed to delete vocal sample", ex);
+            config.Samples.Insert(index, sample);
+            config.RefreshTemplate();
+            SetStatusMessage("Unable to remove the selected sample.", "Error");
+            return false;
+        }
+
+        WarmUpTrainingTemplates(_profileConfiguration);
+        await _profileRepository.SaveProfileConfigurationAsync(_profileConfiguration, CancellationToken.None).ConfigureAwait(true);
+        RefreshActionStatuses(_profileConfiguration);
+        UpdateActionSampleStates();
+        RefreshRecordingCommandStates();
+        SetStatusMessage($"Removed sample from {action}.", "Info");
+        return true;
     }
 
     private ActionConfiguration GetActionConfiguration(VocalAction action)
@@ -846,6 +918,11 @@ public sealed class MainWindowViewModel : ViewModelBase
         DeleteRecordingCommand.RaiseCanExecuteChanged();
     }
 
+    private void RefreshViewSamplesCommandState()
+    {
+        _viewSamplesCommand.RaiseCanExecuteChanged();
+    }
+
     private void RefreshActionStatuses()
     {
         if (_profileConfiguration is null)
@@ -874,6 +951,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(ActionStatuses));
         UpdateDirectionalTemplates(configuration);
         UpdateCommandStates();
+        RefreshViewSamplesCommandState();
         if (CurrentMode is AppMode.Idle or AppMode.Stopped)
         {
             if (HasDirectionalTemplates(configuration))
@@ -899,6 +977,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             var configuration = _profileConfiguration.ActionConfigurations[kvp.Key];
                 kvp.Value.UpdateMetadata(configuration.Samples, configuration.Template, configuration.DirectionalTemplate);
         }
+        RefreshViewSamplesCommandState();
     }
 
     private async Task StartConfigurationFlowAsync()

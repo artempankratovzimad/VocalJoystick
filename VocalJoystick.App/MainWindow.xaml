@@ -56,6 +56,7 @@
             <Setter Property="CornerRadius" Value="12" />
             <Setter Property="Padding" Value="16" />
         </Style>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
     </Window.Resources>
     <Window.Background>
         <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
@@ -74,27 +75,20 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <Grid Grid.Row="0">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="400" />
+                <ColumnDefinition Width="400" />
+                <ColumnDefinition Width="400" />
+                <ColumnDefinition Width="400" />
             </Grid.ColumnDefinitions>
 
-            <Grid Grid.Column="0" Margin="0 0 24 0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-
-                <Border Grid.Row="0" Grid.Column="0" Width="300" Style="{StaticResource PanelBorderStyle}" Margin="0 0 16 16" VerticalAlignment="Top">
-                    <StackPanel>
-                        <StackPanel Margin="0 0 0 12">
+            <Border Grid.Column="0" Width="400" Style="{StaticResource PanelBorderStyle}" Margin="0 0 12 0" VerticalAlignment="Top">
+                <StackPanel>
+                    <StackPanel Margin="0 0 0 12">
                         <TextBlock FontSize="18" FontWeight="Bold" Foreground="{StaticResource PrimaryTextBrush}" Text="Microphone" />
                         <TextBlock FontSize="14" Foreground="{StaticResource SecondaryTextBrush}" Text="Status:" />
                         <TextBox Style="{StaticResource SelectableTextBoxStyle}" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" Text="{Binding MicrophoneStatus, Mode=OneWay}" />
@@ -102,60 +96,60 @@
                     <StackPanel>
                         <TextBlock FontSize="18" FontWeight="Bold" Foreground="{StaticResource PrimaryTextBrush}" Text="Current Profile" />
                         <TextBox Style="{StaticResource SelectableTextBoxStyle}" FontSize="16" Foreground="{StaticResource SecondaryTextBrush}" Text="{Binding CurrentProfileDisplay, Mode=OneWay}" />
-                        </StackPanel>
                     </StackPanel>
-                </Border>
+                </StackPanel>
+            </Border>
 
-                <Border Grid.Row="0" Grid.Column="1" Width="300" Style="{StaticResource PanelBorderStyle}" Margin="0 0 0 16" VerticalAlignment="Top">
-                    <StackPanel>
-                        <TextBlock FontSize="18" FontWeight="Bold" Foreground="{StaticResource PrimaryTextBrush}" Text="Mode controls" />
-                        <WrapPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                            <Button Content="Configuration Mode" Command="{Binding ConfigurationModeCommand}" Width="160" Height="40" Margin="0 0 12 0"
-                                    AutomationProperties.HelpText="Enter configuration mode to record vocal templates." />
-                            <Button Content="Working Mode" Command="{Binding WorkingModeCommand}" Width="140" Height="40" Margin="0 0 12 0"
-                                    AutomationProperties.HelpText="Enter working mode to execute mouse commands." />
-                            <Button Content="Stop" Command="{Binding StopCommand}" Width="100" Height="40" Margin="0 0 12 0"
-                                    AutomationProperties.HelpText="Stop any ongoing capture or movement loops." />
-                            <Button Content="Settings" Command="{Binding SettingsCommand}" Width="120" Height="40"
-                                    AutomationProperties.HelpText="Open the settings placeholder." />
-                        </WrapPanel>
-                    </StackPanel>
-                </Border>
-
-                <Border Grid.Row="1" Grid.Column="0" Width="300" Style="{StaticResource PanelBorderStyle}" Margin="0 0 16 0" VerticalAlignment="Top">
-                    <StackPanel>
-                        <TextBlock FontSize="18" FontWeight="Bold" Foreground="{StaticResource PrimaryTextBrush}" Text="Settings" />
-                        <TextBox Style="{StaticResource SelectableTextBoxStyle}" FontSize="16" Foreground="{StaticResource SecondaryTextBrush}" Text="{Binding SettingsSummary, Mode=OneWay}" />
-                        <TextBox Style="{StaticResource SelectableTextBoxStyle}" FontSize="12" Foreground="{StaticResource MutedTextBrush}" Text="Persistence stored under %AppData%/VocalJoystick" />
-                        <StackPanel Margin="0 12 0 0">
-                            <TextBlock FontSize="14" Foreground="{StaticResource SecondaryTextBrush}" Text="Movement speed" AutomationProperties.HelpText="Adjust how quickly a directional command moves the cursor." />
-                            <Slider Minimum="80" Maximum="640" TickFrequency="20" LargeChange="40" SmallChange="10" Value="{Binding MovementSpeed, Mode=TwoWay}" ToolTip="Movement speed in pixels per second" />
-                            <TextBox Style="{StaticResource SelectableTextBoxStyle}" FontSize="12" Foreground="{StaticResource MutedTextBrush}" Text="{Binding MovementSpeed, Mode=OneWay, StringFormat='Speed: {0:F0} px/s'}" />
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
-
-                <Border Grid.Row="1" Grid.Column="1" Width="300" Style="{StaticResource PanelBorderStyle}" Margin="0 0 0 0" VerticalAlignment="Top">
-                    <StackPanel>
-                        <TextBlock FontSize="18" FontWeight="Bold" Foreground="{StaticResource PrimaryTextBrush}" Text="Microphone Input" />
-                        <ComboBox ItemsSource="{Binding AvailableMicrophones}"
-                                  SelectedValuePath="Id"
-                                  SelectedValue="{Binding SelectedMicrophoneId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                  DisplayMemberPath="Name"
-                                  Background="{StaticResource InputBackgroundBrush}"
-                                  Foreground="{StaticResource PrimaryTextBrush}"
-                                  BorderBrush="{StaticResource ControlBorderBrush}"
-                                  Margin="0 8 0 6" />
-                        <TextBox Style="{StaticResource SelectableTextBoxStyle}" FontSize="14" Foreground="{StaticResource SecondaryTextBrush}"
-                                 Text="{Binding SelectedMicrophoneName, Mode=OneWay, StringFormat='Selected: {0}'}" />
-                        <TextBox Style="{StaticResource SelectableTextBoxStyle}" FontSize="14" Foreground="{StaticResource SecondaryTextBrush}"
-                                 Text="{Binding CaptureState, Mode=OneWay, StringFormat='Capture state: {0}'}" />
-                    </StackPanel>
-                </Border>
-            </Grid>
-
-            <Border Grid.Column="1" Width="400" Style="{StaticResource PanelBorderStyle}" Margin="0 0 0 16">
+            <Border Grid.Column="1" Width="400" Style="{StaticResource PanelBorderStyle}" Margin="0 0 12 0" VerticalAlignment="Top">
                 <StackPanel>
+                    <TextBlock FontSize="18" FontWeight="Bold" Foreground="{StaticResource PrimaryTextBrush}" Text="Settings" />
+                    <TextBox Style="{StaticResource SelectableTextBoxStyle}" FontSize="16" Foreground="{StaticResource SecondaryTextBrush}" Text="{Binding SettingsSummary, Mode=OneWay}" />
+                    <TextBox Style="{StaticResource SelectableTextBoxStyle}" FontSize="12" Foreground="{StaticResource MutedTextBrush}" Text="Persistence stored under %AppData%/VocalJoystick" />
+                    <StackPanel Margin="0 12 0 0">
+                        <TextBlock FontSize="14" Foreground="{StaticResource SecondaryTextBrush}" Text="Movement speed" AutomationProperties.HelpText="Adjust how quickly a directional command moves the cursor." />
+                        <Slider Minimum="80" Maximum="640" TickFrequency="20" LargeChange="40" SmallChange="10" Value="{Binding MovementSpeed, Mode=TwoWay}" ToolTip="Movement speed in pixels per second" />
+                        <TextBox Style="{StaticResource SelectableTextBoxStyle}" FontSize="12" Foreground="{StaticResource MutedTextBrush}" Text="{Binding MovementSpeed, Mode=OneWay, StringFormat='Speed: {0:F0} px/s'}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Column="2" Width="400" Style="{StaticResource PanelBorderStyle}" Margin="0 0 12 0" VerticalAlignment="Top">
+                <StackPanel>
+                    <TextBlock FontSize="18" FontWeight="Bold" Foreground="{StaticResource PrimaryTextBrush}" Text="Mode controls" />
+                    <WrapPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Button Content="Configuration Mode" Command="{Binding ConfigurationModeCommand}" Width="160" Height="40" Margin="0 0 12 0"
+                                AutomationProperties.HelpText="Enter configuration mode to record vocal templates." />
+                        <Button Content="Working Mode" Command="{Binding WorkingModeCommand}" Width="140" Height="40" Margin="0 0 12 0"
+                                AutomationProperties.HelpText="Enter working mode to execute mouse commands." />
+                        <Button Content="Stop" Command="{Binding StopCommand}" Width="100" Height="40" Margin="0 0 12 0"
+                                AutomationProperties.HelpText="Stop any ongoing capture or movement loops." />
+                        <Button Content="Settings" Command="{Binding SettingsCommand}" Width="120" Height="40"
+                                AutomationProperties.HelpText="Open the settings placeholder." />
+                    </WrapPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Column="3" Width="400" Style="{StaticResource PanelBorderStyle}" VerticalAlignment="Top">
+                <StackPanel>
+                    <TextBlock FontSize="18" FontWeight="Bold" Foreground="{StaticResource PrimaryTextBrush}" Text="Microphone Input" />
+                    <ComboBox ItemsSource="{Binding AvailableMicrophones}"
+                              SelectedValuePath="Id"
+                              SelectedValue="{Binding SelectedMicrophoneId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                              DisplayMemberPath="Name"
+                              Background="{StaticResource InputBackgroundBrush}"
+                              Foreground="{StaticResource PrimaryTextBrush}"
+                              BorderBrush="{StaticResource ControlBorderBrush}"
+                              Margin="0 8 0 6" />
+                    <TextBox Style="{StaticResource SelectableTextBoxStyle}" FontSize="14" Foreground="{StaticResource SecondaryTextBrush}"
+                             Text="{Binding SelectedMicrophoneName, Mode=OneWay, StringFormat='Selected: {0}'}" />
+                    <TextBox Style="{StaticResource SelectableTextBoxStyle}" FontSize="14" Foreground="{StaticResource SecondaryTextBrush}"
+                             Text="{Binding CaptureState, Mode=OneWay, StringFormat='Capture state: {0}'}" />
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <Border Grid.Row="1" Style="{StaticResource PanelBorderStyle}" Width="1600" Margin="0 0 0 16">
+            <StackPanel>
                 <TextBlock FontSize="18" FontWeight="Bold" Foreground="{StaticResource PrimaryTextBrush}" Text="Voice Activity" />
                 <TextBox Style="{StaticResource SelectableTextBoxStyle}" FontSize="14" Foreground="{StaticResource SecondaryTextBrush}"
                          Text="{Binding VadState, Mode=OneWay, StringFormat='VAD state: {0}'}" />
@@ -171,11 +165,10 @@
                 <TextBox Text="{Binding FrameSize, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="120" Background="{StaticResource InputBackgroundBrush}" Foreground="{StaticResource PrimaryTextBrush}" BorderBrush="{StaticResource ControlBorderBrush}" />
                 <TextBox Style="{StaticResource SelectableTextBoxStyle}" FontSize="12" Foreground="{StaticResource MutedTextBrush}" Text="Overlap" Margin="0 10 0 0" />
                 <Slider Minimum="0" Maximum="0.95" SmallChange="0.05" Value="{Binding FrameOverlap, Mode=TwoWay}" />
-                </StackPanel>
-            </Border>
-        </Grid>
+            </StackPanel>
+        </Border>
 
-        <Border Grid.Row="1" Style="{StaticResource PanelBorderStyle}" Margin="0 0 0 16">
+        <Border Grid.Row="5" Style="{StaticResource PanelBorderStyle}" Margin="0 0 0 16">
             <StackPanel>
                 <TextBlock FontSize="18" FontWeight="Bold" Foreground="{StaticResource PrimaryTextBrush}" Text="Signal Level" />
                 <ProgressBar Minimum="0" Maximum="100" Height="18" Margin="0 8 0 4" Value="{Binding SignalLevelPercent, Mode=OneWay}" />
@@ -198,8 +191,9 @@
                             <TextBox Style="{StaticResource SelectableTextBoxStyle}" FontSize="12" Foreground="{StaticResource MutedTextBrush}" Text="{Binding FeatureSummary, Mode=OneWay}" TextWrapping="Wrap" />
                             <StackPanel Orientation="Horizontal" Margin="0 8 0 0" HorizontalAlignment="Left">
                                 <Button Content="Record" Command="{Binding DataContext.StartRecordingCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding Action}" Width="90" Margin="0 0 6 0" />
-                                <Button Content="Stop" Command="{Binding DataContext.StopRecordingCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding Action}" Width="90" Margin="0 0 6 0" />
-                                <Button Content="Delete" Command="{Binding DataContext.DeleteRecordingCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding Action}" Width="90" />
+                            <Button Content="Stop" Command="{Binding DataContext.StopRecordingCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding Action}" Width="90" Margin="0 0 6 0" />
+                            <Button Content="View" Command="{Binding DataContext.ViewSamplesCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding Action}" Width="90" Margin="0 0 6 0" Visibility="{Binding IsDirectional, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                            <Button Content="Delete" Command="{Binding DataContext.DeleteRecordingCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding Action}" Width="90" />
                             </StackPanel>
                         </StackPanel>
                     </Border>
@@ -274,7 +268,7 @@
             </StackPanel>
         </Border>
 
-        <Border Grid.Row="5" Style="{StaticResource PanelBorderStyle}">
+        <Border Grid.Row="6" Style="{StaticResource PanelBorderStyle}">
             <StackPanel>
                 <TextBlock FontSize="18" FontWeight="Bold" Foreground="{StaticResource PrimaryTextBrush}" Text="Current Command" />
                 <TextBox Style="{StaticResource SelectableTextBoxStyle}" FontSize="16" Foreground="{StaticResource AccentBrush}" Text="{Binding CurrentCommand, Mode=OneWay}" />
@@ -283,7 +277,7 @@
             </StackPanel>
         </Border>
 
-        <Border Grid.Row="6" Style="{StaticResource PanelBorderStyle}" AutomationProperties.HelpText="Direction recognition diagnostics panel">
+        <Border Grid.Row="7" Style="{StaticResource PanelBorderStyle}" AutomationProperties.HelpText="Direction recognition diagnostics panel">
             <StackPanel>
                 <TextBlock FontSize="18" FontWeight="Bold" Foreground="{StaticResource PrimaryTextBrush}" Text="Direction diagnostics" />
                 <UniformGrid Columns="2" Margin="0 12 0 0">

@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using VocalJoystick.Core.Interfaces;
 using VocalJoystick.Core.Models;
@@ -21,19 +22,35 @@ public sealed class VowelDirectionalClassifier : IDirectionalClassifier
             return new DirectionalClassificationResult(null, 0, feature, false);
         }
 
-        var scored = templates
-            .Select(kvp => (Action: kvp.Key, Template: kvp.Value, Distance: feature.DistanceTo(kvp.Value.Prototype)))
-            .OrderBy(tuple => tuple.Distance)
-            .FirstOrDefault();
-
-        if (scored.Template is null)
+        var sampleMetrics = DirectionalSampleMetrics.FromFeatureVector(feature);
+        if (sampleMetrics is null)
         {
             return new DirectionalClassificationResult(null, 0, feature, false);
         }
 
-        var maxDistance = templates.Max(t => feature.DistanceTo(t.Value.Prototype));
-        var confidence = 1 - Math.Clamp(scored.Distance / Math.Max(maxDistance, 1), 0, 1);
+        var scored = templates
+            .Select(kvp =>
+            {
+                var templateMetrics = DirectionalSampleMetrics.FromFeatureVector(kvp.Value.Prototype);
+                if (templateMetrics is null)
+                {
+                    return (kvp.Key, Similarity: (double?)null);
+                }
+
+                var similarity = DirectionalSampleMetrics.CalculateSimilarity(sampleMetrics, templateMetrics);
+                return (kvp.Key, Similarity: similarity);
+            })
+            .Where(tuple => tuple.Similarity.HasValue)
+            .OrderByDescending(tuple => tuple.Similarity!.Value)
+            .FirstOrDefault();
+
+        if (!scored.Similarity.HasValue)
+        {
+            return new DirectionalClassificationResult(null, 0, feature, false);
+        }
+
+        var confidence = Math.Clamp(scored.Similarity.Value, 0, 1);
         var reliable = confidence >= _settings.ActivationConfidence;
-        return new DirectionalClassificationResult(scored.Action, confidence, feature, reliable);
+        return new DirectionalClassificationResult(scored.Key, confidence, feature, reliable);
     }
 }

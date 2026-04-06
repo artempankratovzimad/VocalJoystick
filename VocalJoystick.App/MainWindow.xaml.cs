@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Windows;
 using VocalJoystick.App.ViewModels;
+using VocalJoystick.App.Views;
 
 namespace VocalJoystick.App;
 
@@ -17,6 +18,8 @@ public partial class MainWindow : Window
         _viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
         InitializeComponent();
         DataContext = _viewModel;
+        _viewModel.SampleListRequested += OnSampleListRequested;
+        Closed += (_, _) => _viewModel.SampleListRequested -= OnSampleListRequested;
         Loaded += OnLoaded;
     }
 
@@ -24,5 +27,26 @@ public partial class MainWindow : Window
     {
         Loaded -= OnLoaded;
         await _viewModel.InitializeAsync(CancellationToken.None).ConfigureAwait(true);
+    }
+
+    private void OnSampleListRequested(object? sender, SampleListRequestEventArgs args)
+    {
+        var viewModel = new DirectionalSampleListViewModel(
+            args.Action,
+            args.Samples,
+            args.Template,
+            args.AverageMetrics,
+            args.DeleteSampleCallback);
+
+        var dialog = new DirectionalSampleListWindow
+        {
+            Owner = this,
+            DataContext = viewModel
+        };
+
+        void CloseHandler() => dialog.Close();
+        viewModel.RequestClose += CloseHandler;
+        dialog.Closed += (_, _) => viewModel.RequestClose -= CloseHandler;
+        dialog.ShowDialog();
     }
 }
