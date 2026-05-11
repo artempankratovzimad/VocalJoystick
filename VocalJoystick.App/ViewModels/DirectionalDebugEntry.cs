@@ -1,0 +1,38 @@
+using System.Collections.Generic;
+
+namespace VocalJoystick.App.ViewModels;
+
+public sealed record DirectionalDebugEntry(
+    DateTimeOffset Timestamp,
+    int BufferSamples,
+    double BufferRms,
+    int FrameCount,
+    bool VadActive,
+    int FeatureVectorLength,
+    bool FeatureAvailable,
+    double? PitchHz,
+    double PitchConfidence,
+    int MfccCount,
+    double? MfccMean,
+    double? MfccMin,
+    double? MfccMax,
+    double? MfccStdDev,
+    double? MfccRange,
+    double? MfccDelta,
+    double? SpectralCentroid,
+    double? SpectralSpread,
+    double? SpectralPower,
+    double SummaryRms,
+    double VoicedRatio,
+    double? FormantFirstHz,
+    double? FormantSecondHz,
+    double? FormantDeltaHz,
+    string Candidate,
+    string ActiveDirection,
+    double Confidence,
+    string Status,
+    IReadOnlyDictionary<string, double?> Similarities,
+    int FrameSize,
+    double FrameOverlap,
+    double FrameOverlapPercent,
+    int FrameHopSize);

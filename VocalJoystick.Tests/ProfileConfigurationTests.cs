@@ -19,6 +19,15 @@ public sealed class ProfileConfigurationTests
     }
 
     [TestMethod]
+    public void CreateDefault_ExposesProfilePreferences()
+    {
+        var metadata = new UserProfileMetadata();
+        var configuration = ProfileConfiguration.CreateDefault(metadata);
+
+        Assert.AreEqual(ProfilePreferences.CreateDefault(), configuration.Preferences);
+    }
+
+    [TestMethod]
     public void ConfiguredActions_ReturnsCompleteActionList()
     {
         var metadata = new UserProfileMetadata();

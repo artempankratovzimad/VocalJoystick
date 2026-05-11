@@ -66,6 +66,9 @@ public sealed class PersistenceTests
         Assert.IsNotNull(loaded);
         Assert.AreEqual(profile.Id, loaded.Metadata.Id);
         Assert.AreEqual(Enum.GetValues<VocalAction>().Length, loaded.ActionConfigurations.Count);
+        Assert.IsNotNull(loaded.Preferences);
+        Assert.AreEqual(FrameProcessingSettings.CreateDefault().FrameSize, loaded.Preferences.FrameSettings.FrameSize);
+        Assert.AreEqual(0.7, loaded.Preferences.ClickConfidenceThreshold);
     }
 
     [TestMethod]

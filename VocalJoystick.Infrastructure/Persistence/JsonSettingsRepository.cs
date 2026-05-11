@@ -33,8 +33,14 @@ public sealed class JsonSettingsRepository : ISettingsRepository
         try
         {
             var content = await File.ReadAllTextAsync(_storageLocation.SettingsFile, cancellationToken).ConfigureAwait(false);
+            using var document = JsonDocument.Parse(content);
             var settings = JsonSerializer.Deserialize<AppSettings>(content, _options);
-            return settings ?? AppSettings.CreateDefault();
+            if (settings is null)
+            {
+                return AppSettings.CreateDefault();
+            }
+
+            return ApplyLegacyMovementSpeed(document.RootElement, settings);
         }
         catch (JsonException)
         {
@@ -47,5 +53,29 @@ public sealed class JsonSettingsRepository : ISettingsRepository
         cancellationToken.ThrowIfCancellationRequested();
         var content = JsonSerializer.Serialize(settings, _options);
         await File.WriteAllTextAsync(_storageLocation.SettingsFile, content, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static AppSettings ApplyLegacyMovementSpeed(JsonElement root, AppSettings settings)
+    {
+        if (root.TryGetProperty("MovementStartSpeed", out _) || root.TryGetProperty("MovementEndSpeed", out _))
+        {
+            return settings;
+        }
+
+        if (!root.TryGetProperty("MovementSpeed", out var legacySpeedElement))
+        {
+            return settings;
+        }
+
+        if (!legacySpeedElement.TryGetDouble(out var legacySpeed))
+        {
+            return settings;
+        }
+
+        return settings with
+        {
+            MovementStartSpeed = legacySpeed,
+            MovementEndSpeed = legacySpeed
+        };
     }
 }

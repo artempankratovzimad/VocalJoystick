@@ -3,6 +3,9 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Text.Encodings.Web;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
@@ -49,18 +52,29 @@ public sealed class MainWindowViewModel : ViewModelBase
     private readonly DelegateCommand _configurationModeCommand;
     private readonly DelegateCommand _workingModeCommand;
     private readonly DelegateCommand _stopCommand;
+    private readonly DelegateCommand _saveProfileCommand;
     private readonly DelegateCommand<VocalAction?> _viewSamplesCommand;
     private readonly IDirectionalTrainingService _trainingService;
     private string _clickRecognitionStatus = "Awaiting click events";
     private double _clickRecognitionConfidence;
+    private double? _previousMfccMean;
     private readonly ClickPrototypeBuilder _clickPrototypeBuilder = new();
     private VocalAction? _recognizedDirection;
     private double _directionRecognitionConfidence;
     private DirectionalRecognitionDebugState _directionRecognitionDebug = DirectionalRecognitionDebugState.Idle;
     private CancellationTokenSource? _movementLoopCts;
+    private TimeSpan _movementAccelerationElapsed;
+    private VocalAction? _movementLoopDirection;
+    private TimeSpan _currentSilentDuration = TimeSpan.Zero;
     private static readonly TimeSpan MovementTickInterval = TimeSpan.FromMilliseconds(40);
+    private static readonly TimeSpan ClickActivationDelay = TimeSpan.FromMilliseconds(500);
     private static readonly VocalAction[] DirectionalActions =
         { VocalAction.MoveUp, VocalAction.MoveDown, VocalAction.MoveLeft, VocalAction.MoveRight };
+    private static readonly JsonSerializerOptions _directionalDebugJsonOptions = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
     private string _statusMessage = "Select a mode to begin.";
     private string _statusSeverity = "Info";
     private string _bufferDebugInfo = "Waiting for microphone buffer...";
@@ -111,6 +125,10 @@ public sealed class MainWindowViewModel : ViewModelBase
             () => FireAndForget(StopModeAsync("Microphone paused", "Working loop paused", "Capture stopped.")),
             () => CurrentMode != AppMode.Stopped);
 
+        _saveProfileCommand = new DelegateCommand(
+            () => FireAndForget(SaveProfilePreferencesAsync()),
+            () => _profileConfiguration is not null);
+
         SettingsCommand = new DelegateCommand(() => CurrentCommand = "Settings dialog placeholder");
 
         _actionStateMap = Enum.GetValues<VocalAction>().ToDictionary(action => action, action => new ActionSampleState(action));
@@ -132,6 +150,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     public DelegateCommand ConfigurationModeCommand => _configurationModeCommand;
     public DelegateCommand WorkingModeCommand => _workingModeCommand;
     public DelegateCommand StopCommand => _stopCommand;
+    public DelegateCommand SaveProfileCommand => _saveProfileCommand;
     public DelegateCommand SettingsCommand { get; }
 
     public string MicrophoneStatus
@@ -275,11 +294,15 @@ public sealed class MainWindowViewModel : ViewModelBase
         set => UpdateClickConfidenceThreshold(value);
     }
 
+    public string ClickConfidenceThresholdDisplay => ClickConfidenceThreshold.ToString("F2");
+
     public double ClickMarginThreshold
     {
         get => CurrentSettings.ClickMarginThreshold;
         set => UpdateClickMarginThreshold(value);
     }
+
+    public string ClickMarginThresholdDisplay => ClickMarginThreshold.ToString("F2");
 
     public int ClickCooldownMs
     {
@@ -287,10 +310,28 @@ public sealed class MainWindowViewModel : ViewModelBase
         set => UpdateClickCooldownMs(value);
     }
 
-    public double MovementSpeed
+    public bool RequireClickSilence
     {
-        get => CurrentSettings.MovementSpeed;
-        set => UpdateMovementSpeed(value);
+        get => CurrentSettings.RequireClickSilence;
+        set => UpdateRequireClickSilence(value);
+    }
+
+    public double MovementStartSpeed
+    {
+        get => CurrentSettings.MovementStartSpeed;
+        set => UpdateMovementStartSpeed(value);
+    }
+
+    public double MovementEndSpeed
+    {
+        get => CurrentSettings.MovementEndSpeed;
+        set => UpdateMovementEndSpeed(value);
+    }
+
+    public double MovementAccelerationSeconds
+    {
+        get => CurrentSettings.MovementAccelerationSeconds;
+        set => UpdateMovementAccelerationSeconds(value);
     }
 
     public IReadOnlyList<AudioDeviceInfo> AvailableMicrophones => _audioCaptureService.AvailableDevices;
@@ -357,6 +398,8 @@ public sealed class MainWindowViewModel : ViewModelBase
         set => UpdateFrameSettings(_frameSettings.WithThreshold(value));
     }
 
+    public string VadThresholdDisplay => VadThreshold.ToString("F3");
+
     public int FrameSize
     {
         get => _frameSettings.FrameSize;
@@ -367,6 +410,22 @@ public sealed class MainWindowViewModel : ViewModelBase
     {
         get => _frameSettings.Overlap;
         set => UpdateFrameSettings(_frameSettings.WithOverlap(value));
+    }
+
+    public double FrameOverlapPercent
+    {
+        get => Math.Round(_frameSettings.Overlap * 100, 2);
+        set
+        {
+            var clamped = Math.Clamp(value, 0, 95);
+            var newOverlap = clamped / 100d;
+            if (Math.Abs(_frameSettings.Overlap - newOverlap) < 1e-6)
+            {
+                return;
+            }
+
+            UpdateFrameSettings(_frameSettings.WithOverlap(newOverlap));
+        }
     }
 
     public string SettingsSummary =>
@@ -380,7 +439,13 @@ public sealed class MainWindowViewModel : ViewModelBase
             if (SetProperty(ref _currentSettings, value))
             {
                 OnPropertyChanged(nameof(SettingsSummary));
-                OnPropertyChanged(nameof(MovementSpeed));
+                OnPropertyChanged(nameof(MovementStartSpeed));
+                OnPropertyChanged(nameof(MovementEndSpeed));
+                OnPropertyChanged(nameof(MovementAccelerationSeconds));
+                OnPropertyChanged(nameof(RequireClickSilence));
+                OnPropertyChanged(nameof(ClickConfidenceThreshold));
+                OnPropertyChanged(nameof(ClickMarginThreshold));
+                OnPropertyChanged(nameof(ClickCooldownMs));
             }
         }
     }
@@ -736,11 +801,77 @@ public sealed class MainWindowViewModel : ViewModelBase
         CurrentSettings = CurrentSettings.WithFrameSettings(newSettings);
         OnPropertyChanged(nameof(FrameSize));
         OnPropertyChanged(nameof(FrameOverlap));
+        OnPropertyChanged(nameof(FrameOverlapPercent));
         OnPropertyChanged(nameof(VadThreshold));
+        OnPropertyChanged(nameof(VadThresholdDisplay));
 
         if (persist)
         {
             _ = _settingsRepository.SaveSettingsAsync(CurrentSettings, CancellationToken.None);
+        }
+    }
+
+    private void ApplyProfilePreferences(ProfilePreferences? preferences)
+    {
+        if (preferences is null)
+        {
+            return;
+        }
+
+        _frameSettings = preferences.FrameSettings;
+        OnPropertyChanged(nameof(FrameSize));
+        OnPropertyChanged(nameof(FrameOverlap));
+        OnPropertyChanged(nameof(FrameOverlapPercent));
+        OnPropertyChanged(nameof(VadThreshold));
+        OnPropertyChanged(nameof(VadThresholdDisplay));
+
+        var updatedSettings = CurrentSettings with
+        {
+            FrameSettings = preferences.FrameSettings,
+            ClickConfidenceThreshold = preferences.ClickConfidenceThreshold,
+            ClickMarginThreshold = preferences.ClickMarginThreshold,
+            ClickCooldownMs = preferences.ClickCooldownMs,
+            MovementStartSpeed = preferences.MovementStartSpeed,
+            MovementEndSpeed = preferences.MovementEndSpeed,
+            MovementAccelerationSeconds = preferences.MovementAccelerationSeconds,
+            RequireClickSilence = preferences.RequireClickSilence,
+            LastUpdated = DateTimeOffset.UtcNow
+        };
+
+        CurrentSettings = updatedSettings;
+
+        _ = _settingsRepository.SaveSettingsAsync(updatedSettings, CancellationToken.None);
+    }
+
+    private async Task SaveProfilePreferencesAsync()
+    {
+        if (_profileConfiguration is null)
+        {
+            SetStatusMessage("Profile configuration unavailable.", "Error");
+            return;
+        }
+
+        var preferences = new ProfilePreferences(
+            _frameSettings,
+            ClickConfidenceThreshold,
+            ClickMarginThreshold,
+            ClickCooldownMs,
+            RequireClickSilence,
+            MovementStartSpeed,
+            MovementEndSpeed,
+            MovementAccelerationSeconds);
+
+        _profileConfiguration.Preferences = preferences;
+
+        try
+        {
+            await _profileRepository.SaveProfileConfigurationAsync(_profileConfiguration, CancellationToken.None).ConfigureAwait(true);
+            SetStatusMessage("Profile preferences saved.", "Info");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Failed to save profile preferences", ex);
+            SetStatusMessage("Unable to save profile preferences.", "Error");
         }
     }
 
@@ -753,6 +884,7 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         CurrentSettings = CurrentSettings.WithClickConfidenceThreshold(threshold);
         OnPropertyChanged(nameof(ClickConfidenceThreshold));
+        OnPropertyChanged(nameof(ClickConfidenceThresholdDisplay));
         _ = _settingsRepository.SaveSettingsAsync(CurrentSettings, CancellationToken.None);
     }
 
@@ -765,6 +897,7 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         CurrentSettings = CurrentSettings.WithClickMarginThreshold(margin);
         OnPropertyChanged(nameof(ClickMarginThreshold));
+        OnPropertyChanged(nameof(ClickMarginThresholdDisplay));
         _ = _settingsRepository.SaveSettingsAsync(CurrentSettings, CancellationToken.None);
     }
 
@@ -780,15 +913,51 @@ public sealed class MainWindowViewModel : ViewModelBase
         _ = _settingsRepository.SaveSettingsAsync(CurrentSettings, CancellationToken.None);
     }
 
-    private void UpdateMovementSpeed(double speed)
+    private void UpdateMovementStartSpeed(double speed)
     {
-        if (Math.Abs(CurrentSettings.MovementSpeed - speed) < 1e-3)
+        if (Math.Abs(CurrentSettings.MovementStartSpeed - speed) < 1e-3)
         {
             return;
         }
 
-        CurrentSettings = CurrentSettings.WithMovementSpeed(speed);
-        OnPropertyChanged(nameof(MovementSpeed));
+        CurrentSettings = CurrentSettings.WithMovementStartSpeed(speed);
+        OnPropertyChanged(nameof(MovementStartSpeed));
+        _ = _settingsRepository.SaveSettingsAsync(CurrentSettings, CancellationToken.None);
+    }
+
+    private void UpdateMovementEndSpeed(double speed)
+    {
+        if (Math.Abs(CurrentSettings.MovementEndSpeed - speed) < 1e-3)
+        {
+            return;
+        }
+
+        CurrentSettings = CurrentSettings.WithMovementEndSpeed(speed);
+        OnPropertyChanged(nameof(MovementEndSpeed));
+        _ = _settingsRepository.SaveSettingsAsync(CurrentSettings, CancellationToken.None);
+    }
+
+    private void UpdateMovementAccelerationSeconds(double seconds)
+    {
+        if (Math.Abs(CurrentSettings.MovementAccelerationSeconds - seconds) < 1e-3)
+        {
+            return;
+        }
+
+        CurrentSettings = CurrentSettings.WithMovementAccelerationSeconds(seconds);
+        OnPropertyChanged(nameof(MovementAccelerationSeconds));
+        _ = _settingsRepository.SaveSettingsAsync(CurrentSettings, CancellationToken.None);
+    }
+
+    private void UpdateRequireClickSilence(bool enabled)
+    {
+        if (CurrentSettings.RequireClickSilence == enabled)
+        {
+            return;
+        }
+
+        CurrentSettings = CurrentSettings.WithRequireClickSilence(enabled);
+        OnPropertyChanged(nameof(RequireClickSilence));
         _ = _settingsRepository.SaveSettingsAsync(CurrentSettings, CancellationToken.None);
     }
 
@@ -816,19 +985,53 @@ public sealed class MainWindowViewModel : ViewModelBase
         FireAndForget(RecognizeShortClicksAsync(args.Buffer));
     }
 
-    private static string FormatBufferDebug(VoiceActivityResult result, int frameCount, AudioBuffer buffer)
+    private string FormatBufferDebug(VoiceActivityResult result, int frameCount, AudioBuffer buffer)
     {
         var vadLabel = result.IsActive ? "active" : "inactive";
-        return $"Buffer {buffer.Samples.Length} samples / {frameCount} frames @ {buffer.SampleRate}Hz · RMS {result.Rms:F4} · VAD {vadLabel} · {buffer.Timestamp:HH:mm:ss.fff}";
+        var hopSize = CalculateHopSize();
+        var overlapPercent = _frameSettings.Overlap * 100;
+        return $"Buffer {buffer.Samples.Length} samples / {frameCount} frames @ {buffer.SampleRate}Hz · Frame {FrameSize} samples · overlap {overlapPercent:F1}% (hop {hopSize}) · RMS {result.Rms:F4} · VAD {vadLabel} · {buffer.Timestamp:HH:mm:ss.fff}";
+    }
+
+    private int CalculateHopSize()
+    {
+        var overlap = Math.Clamp(_frameSettings.Overlap, 0, 0.95);
+        return Math.Max(1, (int)Math.Round(_frameSettings.FrameSize * (1 - overlap)));
     }
 
     private static string FormatEmptyBufferDebug(AudioBuffer buffer)
         => $"Buffer {buffer.Samples.Length} samples @ {buffer.SampleRate}Hz · no frames extracted · {buffer.Timestamp:HH:mm:ss.fff}";
 
+    private void UpdateSilentDuration(VoiceActivityResult voiceActivity, AudioBuffer buffer)
+    {
+        if (buffer.SampleRate <= 0 || buffer.Samples.Length == 0)
+        {
+            _currentSilentDuration = TimeSpan.Zero;
+            return;
+        }
+
+        if (voiceActivity.Rms < ClickConfidenceThreshold)
+        {
+            _currentSilentDuration += GetBufferDuration(buffer);
+        }
+        else
+        {
+            _currentSilentDuration = TimeSpan.Zero;
+        }
+    }
+
+    private static TimeSpan GetBufferDuration(AudioBuffer buffer)
+        => buffer.SampleRate <= 0
+            ? TimeSpan.Zero
+            : TimeSpan.FromSeconds(buffer.Samples.Length / (double)buffer.SampleRate);
+
+    private void ResetSilentDuration() => _currentSilentDuration = TimeSpan.Zero;
+
     private async Task ProcessDirectionRecognitionAsync(AudioBuffer buffer, Frame frame, VoiceActivityResult voiceActivity, int frameCount)
     {
         try
         {
+            UpdateSilentDuration(voiceActivity, buffer);
             var pitchResult = await _pitchDetector.DetectPitchAsync(frame, CancellationToken.None).ConfigureAwait(true);
             _uiContext.Post(_ =>
             {
@@ -876,22 +1079,37 @@ public sealed class MainWindowViewModel : ViewModelBase
             return;
         }
 
-            var feature = extraction.DirectionalFeature;
-            var metrics = DirectionalSampleMetrics.FromFeatureVector(feature);
-            var debugState = recognitionResult?.Debug ?? DirectionalRecognitionDebugState.Idle;
-            var candidate = debugState.CandidateDirection?.ToString() ?? "none";
-            var activeDirection = recognitionResult?.ActiveDirection?.ToString() ?? "none";
-            var pitchDisplay = pitch.PitchHz.HasValue ? $"{pitch.PitchHz.Value:F1}Hz" : "—";
-            var mfccMean = metrics?.MfccMean.ToString("F3") ?? "n/a";
-            var firstFormant = metrics?.FormantFirstHz.ToString("F1") ?? "n/a";
-            var secondFormant = metrics?.FormantSecondHz.ToString("F1") ?? "n/a";
-            var formantDelta = metrics?.FormantDeltaHz.ToString("F1") ?? "n/a";
-            var spectralCentroid = metrics?.SpectralCentroid.ToString("F1") ?? "n/a";
-            var confidence = recognitionResult?.Confidence ?? 0;
-            var status = debugState.Status;
-            var featureFlag = feature is not null ? "yes" : "no";
+        var feature = extraction.DirectionalFeature;
+        var metrics = DirectionalSampleMetrics.FromFeatureVector(feature);
+        var debugState = recognitionResult?.Debug ?? DirectionalRecognitionDebugState.Idle;
+        var candidate = debugState.CandidateDirection?.ToString() ?? "none";
+        var activeDirection = recognitionResult?.ActiveDirection?.ToString() ?? "none";
+        var pitchDisplay = pitch.PitchHz.HasValue ? $"{pitch.PitchHz.Value:F1}Hz" : "—";
+        var mfccMean = metrics?.MfccMean.ToString("F3") ?? "n/a";
+        var mfccMin = metrics?.MfccMin.ToString("F3") ?? "n/a";
+        var mfccMax = metrics?.MfccMax.ToString("F3") ?? "n/a";
+        var mfccStdDev = metrics?.MfccStdDev.ToString("F3") ?? "n/a";
+        var mfccRange = metrics?.MfccRange.ToString("F3") ?? "n/a";
+        var deltaMean = metrics is not null && _previousMfccMean.HasValue
+            ? (metrics.MfccMean - _previousMfccMean.Value).ToString("F3")
+            : "n/a";
+        var firstFormant = metrics?.FormantFirstHz.ToString("F1") ?? "n/a";
+        var secondFormant = metrics?.FormantSecondHz.ToString("F1") ?? "n/a";
+        var formantDelta = metrics?.FormantDeltaHz.ToString("F1") ?? "n/a";
+        var spectralCentroid = metrics?.SpectralCentroid.ToString("F1") ?? "n/a";
+        var spectralSpread = feature?.SpectralSpread.ToString("F1") ?? "n/a";
+        var spectralPower = feature?.Power.ToString("F1") ?? "n/a";
+        var summaryRms = extraction.Summary.Rms;
+        var summaryVoiced = extraction.Summary.VoicedRatio;
+        var confidence = recognitionResult?.Confidence ?? 0;
+        var status = debugState.Status;
+        var featureFlag = feature is not null ? "yes" : "no";
+        var bufferSamples = buffer.Samples.Length;
+        var bufferRms = voiceActivity.Rms;
 
-        var message = $"[DirectionalDebug] {buffer.Timestamp:HH:mm:ss.fff} frames={frameCount} vad={(voiceActivity.IsActive ? "active" : "inactive")} pitch={pitchDisplay} pitchConf={pitch.Confidence:P0} feature={featureFlag} MFCCmean={mfccMean} F1={firstFormant} F2={secondFormant} Δ={formantDelta} spectral={spectralCentroid} candidate={candidate} active={activeDirection} confidence={confidence:P0} status={status}";
+        var overlapPercent = _frameSettings.Overlap * 100;
+        var hopSize = CalculateHopSize();
+        var message = $"[DirectionalDebug] {buffer.Timestamp:HH:mm:ss.fff} buf={bufferSamples} rms={bufferRms:F3} frames={frameCount} vad={(voiceActivity.IsActive ? "active" : "inactive")} pitch={pitchDisplay} pitchConf={pitch.Confidence:P0} feature={featureFlag} MFCCmean={mfccMean} min={mfccMin} max={mfccMax} std={mfccStdDev} range={mfccRange} Δ={deltaMean} spread={spectralSpread} power={spectralPower} summaryRms={summaryRms:F3} voiced={summaryVoiced:P0} F1={firstFormant} F2={secondFormant} Δ={formantDelta} spectral={spectralCentroid} overlap={overlapPercent:F1}% hop={hopSize} candidate={candidate} active={activeDirection} confidence={confidence:P0} status={status}";
         var similarities = debugState.Similarities ?? new Dictionary<VocalAction, double?>();
         var comparisons = DirectionalActions.Select(action =>
         {
@@ -905,7 +1123,48 @@ public sealed class MainWindowViewModel : ViewModelBase
         {
             message += $" | similarities={joined}";
         }
+        var similarityMap = DirectionalActions
+            .ToDictionary(action => action.ToString(), action => similarities.TryGetValue(action, out var value) ? value : null);
+            var entry = new DirectionalDebugEntry(
+                buffer.Timestamp,
+                bufferSamples,
+                bufferRms,
+                frameCount,
+            voiceActivity.IsActive,
+            extraction.FeatureVector.Length,
+            feature is not null,
+            pitch.PitchHz,
+            pitch.Confidence,
+            feature?.MfccCoefficients.Length ?? 0,
+            metrics?.MfccMean,
+            metrics?.MfccMin,
+            metrics?.MfccMax,
+            metrics?.MfccStdDev,
+            metrics?.MfccRange,
+            metrics is not null && _previousMfccMean.HasValue
+                ? metrics.MfccMean - _previousMfccMean.Value
+                : null,
+            metrics?.SpectralCentroid,
+            feature?.SpectralSpread,
+            feature?.Power,
+            summaryRms,
+            summaryVoiced,
+            metrics?.FormantFirstHz,
+            metrics?.FormantSecondHz,
+            metrics?.FormantDeltaHz,
+            candidate,
+            activeDirection,
+            confidence,
+            status,
+            similarityMap,
+            FrameSize,
+            _frameSettings.Overlap,
+            overlapPercent,
+            hopSize);
+        var json = JsonSerializer.Serialize(entry, _directionalDebugJsonOptions);
+        message += $" | structured={json}";
         _logger.LogDebug(message);
+        _previousMfccMean = metrics?.MfccMean;
     }
 
     private async Task RecognizeShortClicksAsync(AudioBuffer buffer)
@@ -928,7 +1187,29 @@ public sealed class MainWindowViewModel : ViewModelBase
             return;
         }
 
+            if (RequireClickSilence)
+            {
+                if (_currentSilentDuration < ClickActivationDelay)
+                {
+                    var remaining = ClickActivationDelay - _currentSilentDuration;
+                    if (remaining < TimeSpan.Zero)
+                    {
+                        remaining = TimeSpan.Zero;
+                    }
+
+                    _logger.LogInfo($"Click suppressed: need {remaining.TotalSeconds:F1}s silence (current {_currentSilentDuration.TotalSeconds:F1}s)");
+                    _uiContext.Post(_ =>
+                    {
+                        ClickRecognitionStatus = $"{result.Action} suppressed ({remaining.TotalSeconds:F1}s silence needed)";
+                        ClickRecognitionConfidence = result.Confidence;
+                    }, null);
+
+                    return;
+                }
+            }
+
         await HandleClickRecognitionAsync(result).ConfigureAwait(false);
+        ResetSilentDuration();
 
         _uiContext.Post(_ =>
         {
@@ -1139,6 +1420,8 @@ public sealed class MainWindowViewModel : ViewModelBase
             await _profileRepository.SaveProfileConfigurationAsync(configuration, cancellationToken).ConfigureAwait(true);
         }
         _profileConfiguration = configuration;
+        ApplyProfilePreferences(configuration.Preferences ?? ProfilePreferences.CreateDefault());
+        RefreshSaveProfileCommandState();
         RefreshActionStatuses(configuration);
         UpdateActionSampleStates();
         WarmUpTrainingTemplates(configuration);
@@ -1183,6 +1466,8 @@ public sealed class MainWindowViewModel : ViewModelBase
         _workingModeCommand.RaiseCanExecuteChanged();
         _stopCommand.RaiseCanExecuteChanged();
     }
+
+    private void RefreshSaveProfileCommandState() => _saveProfileCommand.RaiseCanExecuteChanged();
 
     private void UpdateDirectionRecognitionState(DirectionalRecognitionResult result)
     {
@@ -1240,6 +1525,8 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         var cts = new CancellationTokenSource();
         _movementLoopCts = cts;
+        _movementAccelerationElapsed = TimeSpan.Zero;
+        _movementLoopDirection = null;
         _ = MovementLoopAsync(cts);
     }
 
@@ -1256,13 +1543,28 @@ public sealed class MainWindowViewModel : ViewModelBase
                     break;
                 }
 
+                if (_movementLoopDirection != direction)
+                {
+                    _movementLoopDirection = direction;
+                    _movementAccelerationElapsed = TimeSpan.Zero;
+                }
+
+                var settings = CurrentSettings;
+                var accelerationTime = Math.Max(0, settings.MovementAccelerationSeconds);
+                var progress = accelerationTime <= double.Epsilon
+                    ? 1.0
+                    : Math.Min(1.0, _movementAccelerationElapsed.TotalSeconds / accelerationTime);
+                var easedProgress = progress * progress;
+                var currentSpeed = settings.MovementStartSpeed + (settings.MovementEndSpeed - settings.MovementStartSpeed) * easedProgress;
+
                 var confidence = Math.Clamp(DirectionRecognitionConfidence, 0, 1);
-                var intensity = MovementSpeed * confidence * MovementTickInterval.TotalSeconds;
+                var intensity = currentSpeed * confidence * MovementTickInterval.TotalSeconds;
                 if (intensity > double.Epsilon)
                 {
                     await _mouseController.MoveAsync(direction.Value, intensity, token).ConfigureAwait(false);
                 }
 
+                _movementAccelerationElapsed += MovementTickInterval;
                 await Task.Delay(MovementTickInterval, token).ConfigureAwait(false);
             }
         }
@@ -1280,6 +1582,8 @@ public sealed class MainWindowViewModel : ViewModelBase
                 _movementLoopCts = null;
             }
 
+            _movementLoopDirection = null;
+            _movementAccelerationElapsed = TimeSpan.Zero;
             cts.Dispose();
         }
     }

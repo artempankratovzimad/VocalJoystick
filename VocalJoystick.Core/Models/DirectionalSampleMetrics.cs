@@ -5,6 +5,10 @@ namespace VocalJoystick.Core.Models;
 
 public sealed record DirectionalSampleMetrics(
     double MfccMean,
+    double MfccMin,
+    double MfccMax,
+    double MfccStdDev,
+    double MfccRange,
     double FormantFirstHz,
     double FormantSecondHz,
     double FormantDeltaHz,
@@ -18,10 +22,36 @@ public sealed record DirectionalSampleMetrics(
         }
 
         var coefficients = feature.MfccCoefficients;
-        var mfccMean = coefficients?.Length > 0 ? coefficients.Average() : 0;
+        double mfccMean;
+        double mfccMin;
+        double mfccMax;
+        double mfccStdDev;
+        double mfccRange;
+
+        if (coefficients?.Length > 0)
+        {
+            mfccMean = coefficients.Average();
+            mfccMin = coefficients.Min();
+            mfccMax = coefficients.Max();
+            mfccRange = mfccMax - mfccMin;
+            var variance = coefficients.Sum(value => Math.Pow(value - mfccMean, 2)) / coefficients.Length;
+            mfccStdDev = Math.Sqrt(Math.Max(0, variance));
+        }
+        else
+        {
+            mfccMean = 0;
+            mfccMin = 0;
+            mfccMax = 0;
+            mfccStdDev = 0;
+            mfccRange = 0;
+        }
         var formantDelta = Math.Abs(feature.Formants.FirstFormantHz - feature.Formants.SecondFormantHz);
         return new DirectionalSampleMetrics(
             mfccMean,
+            mfccMin,
+            mfccMax,
+            mfccStdDev,
+            mfccRange,
             feature.Formants.FirstFormantHz,
             feature.Formants.SecondFormantHz,
             formantDelta,

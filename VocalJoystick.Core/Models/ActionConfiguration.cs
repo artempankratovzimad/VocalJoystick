@@ -37,6 +37,10 @@ public sealed record ActionConfiguration
 
         DirectionalMetricsAverage = new DirectionalSampleMetrics(
             metrics.Average(metric => metric.MfccMean),
+            metrics.Average(metric => metric.MfccMin),
+            metrics.Average(metric => metric.MfccMax),
+            metrics.Average(metric => metric.MfccStdDev),
+            metrics.Average(metric => metric.MfccRange),
             metrics.Average(metric => metric.FormantFirstHz),
             metrics.Average(metric => metric.FormantSecondHz),
             metrics.Average(metric => metric.FormantDeltaHz),

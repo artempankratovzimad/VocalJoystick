@@ -11,6 +11,7 @@ public sealed class ProfileConfiguration
     public int Version { get; set; } = CurrentVersion;
 
     public UserProfileMetadata Metadata { get; set; } = new();
+    public ProfilePreferences Preferences { get; set; } = ProfilePreferences.CreateDefault();
     public Dictionary<VocalAction, ActionConfiguration> ActionConfigurations { get; set; } =
         Enum.GetValues<VocalAction>()
             .ToDictionary(action => action, action => new ActionConfiguration { Action = action });
@@ -22,6 +23,7 @@ public sealed class ProfileConfiguration
         var config = new ProfileConfiguration
         {
             Metadata = metadata,
+            Preferences = ProfilePreferences.CreateDefault(),
             ActionConfigurations = Enum.GetValues<VocalAction>()
                 .ToDictionary(action => action, action => new ActionConfiguration { Action = action })
         };

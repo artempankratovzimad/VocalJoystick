@@ -1,7 +1,5 @@
 using System;
 
-using System;
-
 namespace VocalJoystick.Core.Models;
 
 public sealed record AppSettings(AppMode LastMode, string? ActiveProfileId, string? SelectedMicrophoneId, FrameProcessingSettings FrameSettings)
@@ -10,7 +8,10 @@ public sealed record AppSettings(AppMode LastMode, string? ActiveProfileId, stri
     public double ClickConfidenceThreshold { get; init; } = 0.7;
     public double ClickMarginThreshold { get; init; } = 0.1;
     public int ClickCooldownMs { get; init; } = 400;
-    public double MovementSpeed { get; init; } = 320;
+    public double MovementStartSpeed { get; init; } = 320;
+    public double MovementEndSpeed { get; init; } = 320;
+    public double MovementAccelerationSeconds { get; init; } = 1;
+    public bool RequireClickSilence { get; init; } = true;
 
     public static AppSettings CreateDefault() => new(AppMode.Idle, null, null, FrameProcessingSettings.CreateDefault());
 
@@ -51,9 +52,27 @@ public sealed record AppSettings(AppMode LastMode, string? ActiveProfileId, stri
         LastUpdated = DateTimeOffset.UtcNow
     };
 
-    public AppSettings WithMovementSpeed(double speed) => this with
+    public AppSettings WithMovementStartSpeed(double startSpeed) => this with
     {
-        MovementSpeed = Math.Max(0, speed),
+        MovementStartSpeed = Math.Max(0, startSpeed),
+        LastUpdated = DateTimeOffset.UtcNow
+    };
+
+    public AppSettings WithMovementEndSpeed(double endSpeed) => this with
+    {
+        MovementEndSpeed = Math.Max(0, endSpeed),
+        LastUpdated = DateTimeOffset.UtcNow
+    };
+
+    public AppSettings WithMovementAccelerationSeconds(double seconds) => this with
+    {
+        MovementAccelerationSeconds = Math.Max(0, seconds),
+        LastUpdated = DateTimeOffset.UtcNow
+    };
+
+    public AppSettings WithRequireClickSilence(bool enabled) => this with
+    {
+        RequireClickSilence = enabled,
         LastUpdated = DateTimeOffset.UtcNow
     };
 }
