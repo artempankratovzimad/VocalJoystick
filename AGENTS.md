@@ -3,6 +3,7 @@
 ## Mission for agents
 - Vocal Joystick is a Windows-only accessibility suite built on .NET 8 + WPF; prioritize local audio recognition and low-latency cursor control before anything else.
 - Treat this repo as a layered MVVM solution with separate projects for UI (`VocalJoystick.App`), shared types (`VocalJoystick.Core`), audio helpers (`VocalJoystick.Audio`), recognition logic (`VocalJoystick.Recognition`), Win32 mouse control (`VocalJoystick.Input`), persistence/infrastructure (`VocalJoystick.Infrastructure`), and the MSTest suite (`VocalJoystick.Tests`).
+- Keep implementation classes as the source of truth and avoid relying on placeholder files (`Class1.cs` exists in several libraries and should not be expanded for new features).
 - Keep changes confined to the relevant project when fixing bugs or adding features; cross-project impacts (settings, recognition, input) should be explicitly documented in the PR description.
 - Write tests whenever you touch recognition heuristics or persistence; the MSTest suite verifies feature extraction, directional recognition, profile flow, and settings defaults.
 - Preserve the diagnostics experiences described in the README (AppData logs, configuration workflow, and diagnostics panel) whenever you change how voice/command state is surfaced.
@@ -17,6 +18,7 @@
 ### Run the app
 - `dotnet run --project VocalJoystick.App/VocalJoystick.App.csproj`
   * Use Visual Studio when you need XAML debugging or designers; otherwise the CLI run targets the same WPF project.
+  * Run this command from Windows, not WSL/Linux shells, because the WPF app targets `net8.0-windows`.
   * The app writes settings/logs under `%AppData%/VocalJoystick/`, so ensure that folder is writable before running on a machine with restricted profiles.
 
 ### Tests
@@ -25,6 +27,7 @@
   `dotnet test VocalJoystick.Tests/VocalJoystick.Tests.csproj --filter FullyQualifiedName~VocalJoystick.Tests.AppSettingsTests.CreateDefault_UsesIdleModeAndDefaultSpeed`
   * `--filter Name~Something` also works when the FullyQualifiedName is too long.
 - `dotnet test VocalJoystick.Tests/VocalJoystick.Tests.csproj --filter TestCategory=SmallerGroup` if you add categories. Keep each run fast by filtering to the relevant class or method.
+- Tests currently run with assembly-level method parallelization (`VocalJoystick.Tests/MSTestSettings.cs`), so avoid hidden shared state in fixtures/temp files.
 
 ### Lint / format
 - `dotnet format VocalJoystick.sln` keeps C# formatting aligned with the implicit editorconfig from MSBuild (the generated editorconfig files in the `obj` folders are not authoritative; rely on the solution defaults).
@@ -32,7 +35,7 @@
 - No ESLint/StyleCop configs exist; if you add more analyzers, state that in this file and reference the config location.
 
 ## Diagnostics & persistence notes
-- Active logs live at `%AppData%/VocalJoystick/Logs/log-YYYYMMDD.txt` (UTC timestamps, INFO/WARN/ERROR tags) and are written by the shared `ILogger` implementation during runtime.
+- Active logs live at `%AppData%/VocalJoystick/Logs/log-YYYYMMDD.txt` (UTC timestamps, DEBUG/INFO/WARN/ERROR tags) and are written by the shared `ILogger` implementation during runtime.
 - `AppSettings` and profiles persist under `%AppData%/VocalJoystick/`, so any integration test that writes to disk should use temporary folders (see `PersistenceTests.TestStorageLocation`).
 - The VAD/pitch diagnostics panel mirrors `DirectionalRecognitionDebugState`, so any change to recognition outputs should update both the log message and the UI bindings (`DirectionVoiceDisplay`, `DirectionTemplateStatus`, etc.).
 
@@ -43,6 +46,7 @@
 - `VocalJoystick.Recognition` – feature extraction, pitch detection, voice activity detection, directional/click recognition, and helper classes like `ShortClickRecognitionEngine`.
 - `VocalJoystick.Input` – Win32 cursor control via `SendInput` abstractions; `Win32MouseController` exposes `MoveAsync`, `ClickAsync`, `DoubleClickAsync`.
 - `VocalJoystick.Infrastructure` – JSON persistence (profiles/settings), logging helpers, sample recording, and storage location implementations.
+- `tz.txt` – product notes/TZ context; read it before large behavior changes to recognition/configuration flow.
 - `VocalJoystick.Tests` – MSTest suite with `TestStorageLocation` utilities, async tests, and pattern-based method names (`Subject_State_ExpectedResult`).
 - `VocalJoystick.sln` ties everything together; avoid shifting project references without updating the solution.
 
@@ -57,7 +61,7 @@
 - Order `using` declarations with `System.*` first, followed by third-party namespaces (e.g. `NAudio.*`) and then solution namespaces alphabetically.
 - Prefer file-scoped namespaces (`namespace VocalJoystick.App.ViewModels;`) rather than block namespaces.
 - Keep unrelated `using`s out of files; rely on IDE tooling to surface unused ones before committing.
-- `Global using` directives are not currently used; add them only if a type appears in most files and document the global import location.
+- Explicit project-level `Global using` declarations are not currently used (implicit SDK global usings are enabled in `.csproj`); add manual global imports only if a type appears in most files and document the location.
 
 ### Formatting & blocks
 - Indent with four spaces; avoid tabs.
