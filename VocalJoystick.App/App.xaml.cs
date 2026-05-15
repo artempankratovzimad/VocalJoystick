@@ -1,5 +1,6 @@
 using System.Windows;
 using VocalJoystick.App.DependencyInjection;
+using VocalJoystick.App.Services;
 using VocalJoystick.App.ViewModels;
 using VocalJoystick.Audio;
 using VocalJoystick.Core.Interfaces;
@@ -53,12 +54,12 @@ public partial class App : Application
             sp.GetRequiredService<IFormantExtractor>(),
             sp.GetRequiredService<IMfccExtractor>()));
         services.RegisterSingleton<IDirectionalTrainingService>(_ => new DirectionalTrainingService());
-        services.RegisterSingleton<IDirectionalClassifier>(_ => new VowelDirectionalClassifier(new DirectionalRecognitionSettings()));
+        services.RegisterSingleton<IDirectionalClassifier>(_ => new VowelDirectionalClassifier(DirectionalRecognitionSettings.CreateConservativeDefault()));
         services.RegisterSingleton<IDirectionalVowelRecognizer>(sp => new VowelDirectionalRecognizer(
             sp.GetRequiredService<IDirectionalClassifier>(),
             sp.GetRequiredService<IDirectionalTrainingService>(),
             sp.GetRequiredService<ILogger>(),
-            new DirectionalRecognitionSettings()));
+            DirectionalRecognitionSettings.CreateConservativeDefault()));
         services.RegisterSingleton(_ => new ClickSimilarityCalculator());
         services.RegisterSingleton(sp => new ClickClassifier(sp.GetRequiredService<ClickSimilarityCalculator>()));
         services.RegisterSingleton<IShortClickRecognitionEngine>(sp => new ShortClickRecognitionEngine(
@@ -71,6 +72,9 @@ public partial class App : Application
             sp.GetRequiredService<ILogger>(),
             sp.GetRequiredService<IFeatureExtractor>()));
         services.RegisterSingleton<IMouseController>(sp => new Win32MouseController(sp.GetRequiredService<ILogger>()));
+        services.RegisterSingleton<ITestOverlayController>(sp => new TestOverlayController(sp.GetRequiredService<ILogger>()));
+        services.RegisterSingleton<CursorExecutionActionSink>(sp => new CursorExecutionActionSink(sp.GetRequiredService<IMouseController>()));
+        services.RegisterSingleton<OverlayExecutionActionSink>(sp => new OverlayExecutionActionSink(sp.GetRequiredService<ITestOverlayController>()));
 
         services.RegisterSingleton<MainWindowViewModel>(sp => new MainWindowViewModel(
             sp.GetRequiredService<IProfileRepository>(),
@@ -81,7 +85,9 @@ public partial class App : Application
             sp.GetRequiredService<ISampleRecorder>(),
             sp.GetRequiredService<IShortClickRecognitionEngine>(),
             sp.GetRequiredService<IDirectionalVowelRecognizer>(),
-            sp.GetRequiredService<IMouseController>(),
+            sp.GetRequiredService<CursorExecutionActionSink>(),
+            sp.GetRequiredService<OverlayExecutionActionSink>(),
+            sp.GetRequiredService<ITestOverlayController>(),
             sp.GetRequiredService<IFeatureExtractor>(),
             sp.GetRequiredService<IDirectionalTrainingService>(),
             sp.GetRequiredService<ILogger>()));

@@ -1,5 +1,4 @@
 using System;
-using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -9,6 +8,7 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using VocalJoystick.App.Services;
 using VocalJoystick.Core.Interfaces;
 using VocalJoystick.Core.Models;
 using VocalJoystick.Recognition;
@@ -47,10 +47,13 @@ public sealed class MainWindowViewModel : ViewModelBase
     private readonly Dictionary<VocalAction, ActionSampleState> _actionStateMap;
     private readonly IShortClickRecognitionEngine _clickRecognitionEngine;
     private readonly IDirectionalVowelRecognizer _directionalRecognizer;
-    private readonly IMouseController _mouseController;
+    private readonly IExecutionActionSink _workingActionSink;
+    private readonly IExecutionActionSink _testActionSink;
+    private readonly ITestOverlayController _testOverlayController;
     private readonly IFeatureExtractor _featureExtractor;
     private readonly DelegateCommand _configurationModeCommand;
     private readonly DelegateCommand _workingModeCommand;
+    private readonly DelegateCommand _testModeCommand;
     private readonly DelegateCommand _stopCommand;
     private readonly DelegateCommand _saveProfileCommand;
     private readonly DelegateCommand<VocalAction?> _viewSamplesCommand;
@@ -66,7 +69,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     private TimeSpan _movementAccelerationElapsed;
     private VocalAction? _movementLoopDirection;
     private TimeSpan _currentSilentDuration = TimeSpan.Zero;
-    private static readonly TimeSpan MovementTickInterval = TimeSpan.FromMilliseconds(40);
+    private static readonly TimeSpan ExecutionMovementTickInterval = TimeSpan.FromMilliseconds(20);
     private static readonly TimeSpan ClickActivationDelay = TimeSpan.FromMilliseconds(500);
     private static readonly VocalAction[] DirectionalActions =
         { VocalAction.MoveUp, VocalAction.MoveDown, VocalAction.MoveLeft, VocalAction.MoveRight };
@@ -80,6 +83,11 @@ public sealed class MainWindowViewModel : ViewModelBase
     private string _bufferDebugInfo = "Waiting for microphone buffer...";
     private string _trainingDebugInfo = string.Empty;
     private bool _directionalDebugEnabled;
+    private bool _executionVoiceObserved;
+    private DateTimeOffset? _executionVoiceDetectedAt;
+    private DateTimeOffset? _executionCandidateDetectedAt;
+    private DateTimeOffset? _executionDirectionActivatedAt;
+    private bool _awaitingExecutionFirstMoveLog;
 
     public MainWindowViewModel(
         IProfileRepository profileRepository,
@@ -90,7 +98,9 @@ public sealed class MainWindowViewModel : ViewModelBase
         ISampleRecorder sampleRecorder,
         IShortClickRecognitionEngine clickRecognitionEngine,
         IDirectionalVowelRecognizer directionalRecognizer,
-        IMouseController mouseController,
+        CursorExecutionActionSink workingActionSink,
+        OverlayExecutionActionSink testActionSink,
+        ITestOverlayController testOverlayController,
         IFeatureExtractor featureExtractor,
         IDirectionalTrainingService trainingService,
         ILogger logger)
@@ -103,7 +113,9 @@ public sealed class MainWindowViewModel : ViewModelBase
         _sampleRecorder = sampleRecorder;
         _clickRecognitionEngine = clickRecognitionEngine;
         _directionalRecognizer = directionalRecognizer;
-        _mouseController = mouseController;
+        _workingActionSink = workingActionSink;
+        _testActionSink = testActionSink;
+        _testOverlayController = testOverlayController;
         _featureExtractor = featureExtractor;
         _trainingService = trainingService;
         _logger = logger;
@@ -119,10 +131,14 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         _workingModeCommand = new DelegateCommand(
             () => FireAndForget(StartWorkingFlowAsync()),
-            CanStartWorking);
+            CanStartExecutionMode);
+
+        _testModeCommand = new DelegateCommand(
+            () => FireAndForget(StartTestFlowAsync()),
+            CanStartExecutionMode);
 
         _stopCommand = new DelegateCommand(
-            () => FireAndForget(StopModeAsync("Microphone paused", "Working loop paused", "Capture stopped.")),
+            () => FireAndForget(StopModeAsync("Microphone paused", "Control loop paused", "Capture stopped.")),
             () => CurrentMode != AppMode.Stopped);
 
         _saveProfileCommand = new DelegateCommand(
@@ -149,6 +165,7 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public DelegateCommand ConfigurationModeCommand => _configurationModeCommand;
     public DelegateCommand WorkingModeCommand => _workingModeCommand;
+    public DelegateCommand TestModeCommand => _testModeCommand;
     public DelegateCommand StopCommand => _stopCommand;
     public DelegateCommand SaveProfileCommand => _saveProfileCommand;
     public DelegateCommand SettingsCommand { get; }
@@ -452,6 +469,14 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public string ModeDisplay => CurrentMode.ToString();
 
+    private bool IsExecutionMode => IsExecutionModeValue(CurrentMode);
+
+    private IExecutionActionSink CurrentActionSink => CurrentMode == AppMode.Test
+        ? _testActionSink
+        : _workingActionSink;
+
+    private static bool IsExecutionModeValue(AppMode mode) => mode is AppMode.Working or AppMode.Test;
+
     public AppMode CurrentMode
     {
         get => _currentMode;
@@ -707,10 +732,18 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     private void ApplyMode(AppMode mode, string micState, string commandState)
     {
-        if (mode != AppMode.Working)
+        _directionalRecognizer.UseLowLatencyMode(IsExecutionModeValue(mode));
+
+        if (!IsExecutionModeValue(mode))
         {
             ResetDirectionState();
         }
+
+        if (mode != AppMode.Test)
+        {
+            _testOverlayController.Stop();
+        }
+
         CurrentMode = mode;
         MicrophoneStatus = micState;
         CurrentCommand = commandState;
@@ -1050,10 +1083,21 @@ public sealed class MainWindowViewModel : ViewModelBase
             var extraction = await _featureExtractor.ExtractFeaturesAsync(buffer, CancellationToken.None).ConfigureAwait(true);
             BufferDebugInfo = FormatBufferDebug(voiceActivity, frameCount, buffer);
             DirectionalRecognitionResult? recognitionResult = null;
-            if (CurrentMode == AppMode.Working)
+            if (IsExecutionMode)
             {
+                if (voiceActivity.IsActive && !_executionVoiceObserved)
+                {
+                    _executionVoiceObserved = true;
+                    _executionVoiceDetectedAt = DateTimeOffset.UtcNow;
+                    _executionCandidateDetectedAt = null;
+                    _executionDirectionActivatedAt = null;
+                    _awaitingExecutionFirstMoveLog = false;
+                    _logger.LogInfo($"Execution latency [mode={CurrentActionSink.SinkName}]: voice became active");
+                }
+
                 if (!voiceActivity.IsActive)
                 {
+                    ResetExecutionLatencyTracking();
                     _directionalRecognizer.Reset();
                     _uiContext.Post(_ => ResetDirectionState(), null);
                 }
@@ -1304,11 +1348,11 @@ public sealed class MainWindowViewModel : ViewModelBase
         {
             if (HasDirectionalTemplates(configuration))
             {
-                SetStatusMessage("Directional templates are ready; start Working mode.", "Info");
+                SetStatusMessage("Directional templates are ready; start Working or Test mode.", "Info");
             }
             else
             {
-                SetStatusMessage("Record MoveUp/Down/Left/Right before entering Working mode.", "Warning");
+                SetStatusMessage("Record MoveUp/Down/Left/Right before entering Working or Test mode.", "Warning");
             }
         }
     }
@@ -1339,6 +1383,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         try
         {
             await StopCaptureAsync().ConfigureAwait(true);
+            _testOverlayController.Stop();
             await EnsureProfileConfigurationLoadedAsync(CancellationToken.None).ConfigureAwait(true);
             await StartCaptureAsync().ConfigureAwait(true);
             ApplyMode(AppMode.Configuration, "Recording microphone for configuration", "Ready to record action samples");
@@ -1376,6 +1421,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             }
 
             await StopCaptureAsync().ConfigureAwait(true);
+            _testOverlayController.Stop();
             await StartCaptureAsync().ConfigureAwait(true);
             ApplyMode(AppMode.Working, "Listening for trained patterns", "Ready to execute commands");
             SetStatusMessage("Working mode active; vocal gestures now move the cursor.", "Info");
@@ -1387,6 +1433,44 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
     }
 
+    private async Task StartTestFlowAsync()
+    {
+        if (CurrentMode == AppMode.Test)
+        {
+            SetStatusMessage("Already in test mode.", "Info");
+            return;
+        }
+
+        try
+        {
+            await EnsureProfileConfigurationLoadedAsync(CancellationToken.None).ConfigureAwait(true);
+
+            if (_profileConfiguration is null)
+            {
+                SetStatusMessage("Profile configuration unavailable.", "Error");
+                return;
+            }
+
+            if (!HasDirectionalTemplates(_profileConfiguration))
+            {
+                SetStatusMessage("Record MoveUp, MoveDown, MoveLeft, and MoveRight before entering test mode.", "Warning");
+                return;
+            }
+
+            await StopCaptureAsync().ConfigureAwait(true);
+            _testOverlayController.Start();
+            await StartCaptureAsync().ConfigureAwait(true);
+            ApplyMode(AppMode.Test, "Listening for trained patterns", "Driving test overlay");
+            SetStatusMessage("Test mode active; vocal gestures move the red ball without touching the cursor.", "Info");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Test mode failed to start", ex);
+            SetStatusMessage("Unable to start test mode. Check microphone and templates.", "Error");
+            _testOverlayController.Stop();
+        }
+    }
+
     private async Task StopModeAsync(string micState, string commandState, string statusMessage, string severity = "Info")
     {
         await StopCaptureAsync().ConfigureAwait(true);
@@ -1394,9 +1478,12 @@ public sealed class MainWindowViewModel : ViewModelBase
         SetStatusMessage(statusMessage, severity);
     }
 
-    private bool CanStartWorking()
+    private bool CanStartExecutionMode()
     {
-        return CurrentMode != AppMode.Working && _profileConfiguration is not null && HasDirectionalTemplates(_profileConfiguration);
+        return CurrentMode is not AppMode.Working
+            && CurrentMode is not AppMode.Test
+            && _profileConfiguration is not null
+            && HasDirectionalTemplates(_profileConfiguration);
     }
 
     private async Task EnsureProfileConfigurationLoadedAsync(CancellationToken cancellationToken)
@@ -1464,6 +1551,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     {
         _configurationModeCommand.RaiseCanExecuteChanged();
         _workingModeCommand.RaiseCanExecuteChanged();
+        _testModeCommand.RaiseCanExecuteChanged();
         _stopCommand.RaiseCanExecuteChanged();
     }
 
@@ -1472,9 +1560,44 @@ public sealed class MainWindowViewModel : ViewModelBase
     private void UpdateDirectionRecognitionState(DirectionalRecognitionResult result)
     {
         var previousDirection = RecognizedDirection;
+        var modeLabel = CurrentActionSink.SinkName;
+
+        if (IsExecutionMode
+            && result.Debug.CandidateDirection is not null
+            && _executionCandidateDetectedAt is null)
+        {
+            _executionCandidateDetectedAt = DateTimeOffset.UtcNow;
+            if (_executionVoiceDetectedAt.HasValue)
+            {
+                var candidateMs = (_executionCandidateDetectedAt.Value - _executionVoiceDetectedAt.Value).TotalMilliseconds;
+                _logger.LogInfo($"Execution latency [mode={modeLabel}]: first candidate in {candidateMs:F0} ms");
+            }
+            else
+            {
+                _logger.LogInfo($"Execution latency [mode={modeLabel}]: first candidate detected");
+            }
+        }
+
         RecognizedDirection = result.ActiveDirection;
         DirectionRecognitionConfidence = result.Confidence;
         DirectionRecognitionDebug = result.Debug;
+
+        if (IsExecutionMode
+            && previousDirection is null
+            && RecognizedDirection is not null)
+        {
+            _executionDirectionActivatedAt = DateTimeOffset.UtcNow;
+            _awaitingExecutionFirstMoveLog = true;
+            if (_executionVoiceDetectedAt.HasValue)
+            {
+                var activationMs = (_executionDirectionActivatedAt.Value - _executionVoiceDetectedAt.Value).TotalMilliseconds;
+                _logger.LogInfo($"Execution latency [mode={modeLabel}]: direction activated in {activationMs:F0} ms");
+            }
+            else
+            {
+                _logger.LogInfo($"Execution latency [mode={modeLabel}]: direction activated");
+            }
+        }
 
         if (previousDirection != RecognizedDirection)
         {
@@ -1484,7 +1607,7 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         if (RecognizedDirection is not null)
         {
-            if (CurrentMode == AppMode.Working)
+            if (IsExecutionMode)
             {
                 StartMovementLoop();
             }
@@ -1503,10 +1626,10 @@ public sealed class MainWindowViewModel : ViewModelBase
             {
                 case VocalAction.LeftClick:
                 case VocalAction.RightClick:
-                    await _mouseController.ClickAsync(result.Action, CancellationToken.None).ConfigureAwait(false);
+                    await CurrentActionSink.ClickAsync(result.Action, CancellationToken.None).ConfigureAwait(false);
                     break;
                 case VocalAction.DoubleClick:
-                    await _mouseController.DoubleClickAsync(CancellationToken.None).ConfigureAwait(false);
+                    await CurrentActionSink.DoubleClickAsync(CancellationToken.None).ConfigureAwait(false);
                     break;
             }
         }
@@ -1558,14 +1681,37 @@ public sealed class MainWindowViewModel : ViewModelBase
                 var currentSpeed = settings.MovementStartSpeed + (settings.MovementEndSpeed - settings.MovementStartSpeed) * easedProgress;
 
                 var confidence = Math.Clamp(DirectionRecognitionConfidence, 0, 1);
-                var intensity = currentSpeed * confidence * MovementTickInterval.TotalSeconds;
+                var intensity = currentSpeed * confidence * ExecutionMovementTickInterval.TotalSeconds;
                 if (intensity > double.Epsilon)
                 {
-                    await _mouseController.MoveAsync(direction.Value, intensity, token).ConfigureAwait(false);
+                    await CurrentActionSink.MoveAsync(direction.Value, intensity, token).ConfigureAwait(false);
+                    if (_awaitingExecutionFirstMoveLog)
+                    {
+                        _awaitingExecutionFirstMoveLog = false;
+                        var now = DateTimeOffset.UtcNow;
+                        var modeLabel = CurrentActionSink.SinkName;
+                        if (_executionVoiceDetectedAt.HasValue)
+                        {
+                            var firstMoveMs = (now - _executionVoiceDetectedAt.Value).TotalMilliseconds;
+                            if (_executionDirectionActivatedAt.HasValue)
+                            {
+                                var activationToMoveMs = (now - _executionDirectionActivatedAt.Value).TotalMilliseconds;
+                                _logger.LogInfo($"Execution latency [mode={modeLabel}]: first move sent in {firstMoveMs:F0} ms (activation->move {activationToMoveMs:F0} ms)");
+                            }
+                            else
+                            {
+                                _logger.LogInfo($"Execution latency [mode={modeLabel}]: first move sent in {firstMoveMs:F0} ms");
+                            }
+                        }
+                        else
+                        {
+                            _logger.LogInfo($"Execution latency [mode={modeLabel}]: first move sent");
+                        }
+                    }
                 }
 
-                _movementAccelerationElapsed += MovementTickInterval;
-                await Task.Delay(MovementTickInterval, token).ConfigureAwait(false);
+                _movementAccelerationElapsed += ExecutionMovementTickInterval;
+                await Task.Delay(ExecutionMovementTickInterval, token).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -1599,6 +1745,16 @@ public sealed class MainWindowViewModel : ViewModelBase
         DirectionRecognitionConfidence = 0;
         DirectionRecognitionDebug = DirectionalRecognitionDebugState.Idle;
         StopMovementLoop();
+        ResetExecutionLatencyTracking();
+    }
+
+    private void ResetExecutionLatencyTracking()
+    {
+        _executionVoiceObserved = false;
+        _executionVoiceDetectedAt = null;
+        _executionCandidateDetectedAt = null;
+        _executionDirectionActivatedAt = null;
+        _awaitingExecutionFirstMoveLog = false;
     }
 
     private void OnDirectionDebugChanged()

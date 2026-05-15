@@ -12,4 +12,13 @@ public sealed record DirectionalRecognitionSettings
     public double EnergyToleranceMultiplier { get; init; } = 0.35;
     public double MinimumPitchTolerance { get; init; } = 10;
     public double MinimumEnergyTolerance { get; init; } = 0.05;
+
+    public static DirectionalRecognitionSettings CreateConservativeDefault() => new();
+
+    public static DirectionalRecognitionSettings CreateWorkingLowLatency() => new()
+    {
+        ActivationConfidence = 0.35,
+        ActivationHoldSeconds = 0,
+        HysteresisMargin = 0.05
+    };
 }

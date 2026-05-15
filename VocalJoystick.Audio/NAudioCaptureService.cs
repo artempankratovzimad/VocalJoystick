@@ -11,6 +11,7 @@ namespace VocalJoystick.Audio;
 
 public sealed class NAudioCaptureService : IAudioCaptureService, IDisposable
 {
+    private const int CaptureBufferMilliseconds = 25;
     private readonly List<AudioDeviceInfo> _availableDevices;
     private readonly ILogger _logger;
     private WaveInEvent? _waveIn;
@@ -66,7 +67,7 @@ public sealed class NAudioCaptureService : IAudioCaptureService, IDisposable
             _waveIn = new WaveInEvent
             {
                 DeviceNumber = SelectedDevice.Index,
-                BufferMilliseconds = 100,
+                BufferMilliseconds = CaptureBufferMilliseconds,
                 WaveFormat = new WaveFormat(16000, 16, 1)
             };
 

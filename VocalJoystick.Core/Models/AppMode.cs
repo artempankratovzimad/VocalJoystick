@@ -5,5 +5,6 @@ public enum AppMode
     Idle,
     Configuration,
     Working,
+    Test,
     Stopped
 }

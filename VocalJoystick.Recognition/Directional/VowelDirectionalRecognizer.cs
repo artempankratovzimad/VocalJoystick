@@ -10,7 +10,9 @@ public sealed class VowelDirectionalRecognizer : IDirectionalVowelRecognizer
     private readonly IDirectionalClassifier _classifier;
     private readonly IDirectionalTrainingService _trainingService;
     private readonly ILogger _logger;
-    private readonly DirectionalRecognitionSettings _settings;
+    private readonly DirectionalRecognitionSettings _baseSettings;
+    private DirectionalRecognitionSettings _runtimeSettings;
+    private bool _lowLatencyMode;
     private IReadOnlyDictionary<VocalAction, DirectionalTemplate> _templates = new Dictionary<VocalAction, DirectionalTemplate>();
     private VocalAction? _activeAction;
     private double _activeConfidence;
@@ -26,7 +28,8 @@ public sealed class VowelDirectionalRecognizer : IDirectionalVowelRecognizer
     {
         _classifier = classifier;
         _trainingService = trainingService;
-        _settings = settings ?? new DirectionalRecognitionSettings();
+        _baseSettings = settings ?? DirectionalRecognitionSettings.CreateConservativeDefault();
+        _runtimeSettings = _baseSettings;
         _logger = logger;
     }
 
@@ -50,6 +53,22 @@ public sealed class VowelDirectionalRecognizer : IDirectionalVowelRecognizer
     public void UpdateTemplates(IReadOnlyDictionary<VocalAction, DirectionalTemplate> templates)
     {
         _templates = templates ?? new Dictionary<VocalAction, DirectionalTemplate>();
+        if (_trainingService.MaximumSamples < _trainingService.MinimumSamples)
+        {
+            _logger.LogWarning("Directional training limits are misconfigured");
+        }
+        ResetState();
+    }
+
+    public void UseLowLatencyMode(bool enabled)
+    {
+        _lowLatencyMode = enabled;
+        _runtimeSettings = enabled
+            ? DirectionalRecognitionSettings.CreateWorkingLowLatency()
+            : _baseSettings;
+        _logger.LogInfo(enabled
+            ? "Directional recognizer switched to low-latency mode"
+            : "Directional recognizer switched to conservative mode");
         ResetState();
     }
 
@@ -66,6 +85,11 @@ public sealed class VowelDirectionalRecognizer : IDirectionalVowelRecognizer
         }
 
         var result = _classifier.Classify(feature, _templates);
+        if (_lowLatencyMode)
+        {
+            return result;
+        }
+
         return result.IsReliable ? result : result with { Confidence = 0 };
     }
 
@@ -82,7 +106,7 @@ public sealed class VowelDirectionalRecognizer : IDirectionalVowelRecognizer
             return;
         }
 
-        if (candidate.Confidence >= _settings.ActivationConfidence)
+        if (candidate.Confidence >= _runtimeSettings.ActivationConfidence)
         {
             if (_pendingAction == candidate.Action)
             {
@@ -102,7 +126,7 @@ public sealed class VowelDirectionalRecognizer : IDirectionalVowelRecognizer
 
         if (_activeAction is null)
         {
-            if (candidate is not null && candidate.Action == _pendingAction && _pendingHoldSeconds >= _settings.ActivationHoldSeconds)
+            if (candidate is not null && candidate.Action == _pendingAction && _pendingHoldSeconds >= _runtimeSettings.ActivationHoldSeconds)
             {
                 _activeAction = candidate.Action;
                 _activeConfidence = candidate.Confidence;
@@ -125,7 +149,7 @@ public sealed class VowelDirectionalRecognizer : IDirectionalVowelRecognizer
             return false;
         }
 
-        var requiredConfidence = Math.Max(0, _settings.ActivationConfidence - _settings.HysteresisMargin);
+        var requiredConfidence = Math.Max(0, _runtimeSettings.ActivationConfidence - _runtimeSettings.HysteresisMargin);
         return candidate.Confidence >= requiredConfidence;
     }
 
@@ -138,9 +162,9 @@ public sealed class VowelDirectionalRecognizer : IDirectionalVowelRecognizer
             pitch.PitchHz ?? 0,
             voiceActivity.Rms,
             _pendingHoldSeconds,
-            _settings.ActivationConfidence,
-            _settings.HysteresisMargin,
-            _settings.ActivationHoldSeconds,
+            _runtimeSettings.ActivationConfidence,
+            _runtimeSettings.HysteresisMargin,
+            _runtimeSettings.ActivationHoldSeconds,
             voiceActivity.Rms,
             pitch.PitchHz,
             pitch.Confidence,

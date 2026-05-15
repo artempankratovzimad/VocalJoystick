@@ -132,6 +132,8 @@
                                 AutomationProperties.HelpText="Enter configuration mode to record vocal templates." />
                         <Button Content="Working Mode" Command="{Binding WorkingModeCommand}" Width="140" Height="40" Margin="0 0 12 0"
                                 AutomationProperties.HelpText="Enter working mode to execute mouse commands." />
+                        <Button Content="Test Mode" Command="{Binding TestModeCommand}" Width="120" Height="40" Margin="0 0 12 0"
+                                AutomationProperties.HelpText="Enter test mode to drive the red overlay ball without moving the system cursor." />
                         <Button Content="Stop" Command="{Binding StopCommand}" Width="100" Height="40" Margin="0 0 12 0"
                                 AutomationProperties.HelpText="Stop any ongoing capture or movement loops." />
                         <Button Content="Save profile" Command="{Binding SaveProfileCommand}" Width="140" Height="40" Margin="0 0 12 0"
